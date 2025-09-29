@@ -1,0 +1,3 @@
+FLAGS 
+
+os&architecture dependant. On regardera plus tard si ya besoin 

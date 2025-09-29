@@ -1,0 +1,6 @@
+E_ENTRY 
+
+entrypoint, address type
+if executable, entrypoint in file mem 
+if shared lib, constructor address, function to call when loading lib in mem
+else 0 

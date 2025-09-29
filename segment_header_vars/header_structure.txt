@@ -1,0 +1,25 @@
+PROGRAM HEADER 
+
+struct {
+    Word type;
+    Offset offset; -> where is the content of curr segment 
+    Address vaddr; -> where is the 1st byte of segment 
+    Address paddr; -> only for  physical mem, 
+    Word filesz;   -> size of segment in file. can be 0 for segment with no data. Only header, no content elsewhere in file 
+    Word memsz;    -> size of segment in computer mem. If larger filesz, we have 0 padding bytes 
+    Word flags;    -> PF_{X,W,R} segment permissions 
+    Word align;    -> algignment to boundary (??)
+}
+
+type: 
+0 = PT_NULL     = disable segment     
+1 = PT_LOAD     = load in mem, how? les autres vars de la struct (oww si on change ca en 1 load alors que ca en est pas un a la base)
+                    on peut jouer avec pour load des segments + gros que le fichier et init de la computer mem a 0 depuis la mem de fichier 
+2 = PT_DYNAMIC  = shared libs 
+3 = PT_INTERP   = need a program interpreter for dynamic execs. PIE execs & shared libs sont dynamiques. ce flag nous dira avec le reste du header lequel des 2 on a affaire
+4 = PT_NOTE     = information for bin, ex debugger info 
+5 = PT_SHLIB    = never used, not conform to system file elf spec 
+6 = PT_PHDR     = whether & where prgm header is loaded in computer mem 
+8 = PT_TLS      = threat local storage, info on threat local vars (???)
+
++ processor specific segment types (??)

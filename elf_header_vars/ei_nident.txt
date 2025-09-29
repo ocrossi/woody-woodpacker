@@ -1,0 +1,32 @@
+EI_NIDENT
+16 bytes for how to parse file 
+
+4 Bytes magic number  
+7F 45 4C 46 -> 4 bytes magic number == 7f?? et apres ELF en ascii pour confirmer que c est un fichier elf 
+
+1 Byte file byte length 
+00 = invalid 
+01 = 32 bytes elf file 
+02 = 64 
+
+1 byte Data encoding used 
+00 = invalid 
+01 = LSB, bit de poids fort a droite
+02 = MSB, bit de poids fort a gauche
+
+1 byte version 
+always 1 on est toujours en version 1 depuis les 80s, ca c est du goat programming 
+
+1 byte OS ABI (OS application binary interface)
+0 to n 
+0 = SystemV/none most common 
+1 = HP-UX ?? : Hewlett Packard UniX (lol)
+2 = NetBSD 
+3 = linux ... 
+can have 0 byte on a linux 
+
+1 byte ABI 
+0, (almost) never used 
+
+7 bytes padding 
+00 00 00 00 00 00 00 (not used)

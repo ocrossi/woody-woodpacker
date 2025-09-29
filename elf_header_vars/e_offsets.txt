@@ -1,0 +1,9 @@
+OFFSETS 
+
+
+e_phoff -> prgm header offset 
+e_shoff -> section header offset 
+
+offset relative to beginning of file
+for program & section headers location 
+more headers, on adore

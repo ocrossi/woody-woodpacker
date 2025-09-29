@@ -1,0 +1,11 @@
+ETYPE 
+
+type of elf file 
+4 types:
+0 = ET_NONE     no file type 
+1 = ET_REL      relocatable (obj file) -> ggc -c ... = output.o
+2 = ET_EXEC     executable without ASLR & position independant executable -> gcc -no-pie 
+3 = ET_DYN      shared object (shared libs & position independant code)
+4 = ET_CORE     core file for core dumps 
+
++ some processor values (rare)

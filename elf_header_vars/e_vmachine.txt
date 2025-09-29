@@ -1,0 +1,5 @@
+E_MACHINE 
+
+0x03 ->     x86 
+0x28 ->     ARM 
+0x3E ->     amd64
