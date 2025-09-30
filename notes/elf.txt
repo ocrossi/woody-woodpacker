@@ -1,4 +1,6 @@
 https://www.youtube.com/watch?v=nC1U1LJQL8o
+https://gist.github.com/x0nu11byt3/bcb35c3de461e5fb66173071a2379779  -- cheat sheet
+
 
 Elf file format 
 used for executables, obj files & shared libraries 
