@@ -1,0 +1,17 @@
+https://www.youtube.com/watch?v=gtLMXxZErWE&t=803s
+one packer to rule them all 
+
+
+packing 101
+change file signature to avoid malware detection 
+! dans l elf de base ya des references a d autres ssections qui sont en valeurs absolutes et doivent etre respectees 
+
+
+
+static detection 
+
+
+
+Code emulation detection 
+
+Dynamic detection
