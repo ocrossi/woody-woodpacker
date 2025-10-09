@@ -1,0 +1,8 @@
+https://medium.com/@ckekula/assembly-language-for-beginners-477a492c06fa
+https://medium.com/@ckekula/the-main-elements-of-assembly-language-541c25501a1e
+https://medium.com/@ckekula/writing-your-first-assembly-language-code-e51162b5f2bf
+https://medium.com/@ckekula/assembly-programming-arithmetic-loops-and-conditions-38bce8d6fa9b
+https://medium.com/@ckekula/assembly-programming-sub-routines-macros-and-the-stack-0e59b2b669a4
+https://medium.com/@ckekula/assembly-programming-the-instruction-pointer-and-system-flow-40f45104673e
+
+https://blog.rchapman.org/posts/Linux_System_Call_Table_for_x86_64/

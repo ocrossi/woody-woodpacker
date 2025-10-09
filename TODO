@@ -1,3 +1,6 @@
 check makefile relink
 unit tests for ELF parsing
+remove standard lib c functions & import lib
+free the data man
 
+!!! Endianness, si ca change ca casse tt? !!!

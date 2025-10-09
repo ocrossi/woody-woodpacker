@@ -1,76 +1,220 @@
 #include "../includes/woody.h"
+#include <elf.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
-int is_valid_elf64(const char *filename) {
-    int fd = open(filename, O_RDONLY);
-    if (fd == -1) {
-        perror("open");
-        return 0;
+
+void	*ft_memset(void *b, int c, size_t len)
+{
+    void *ret;
+
+    ret = b;
+    while (len)
+    {
+        *(unsigned char *)b = c;
+        b++;
+        len--;
     }
+    return (ret);
+}
 
-    Elf64_Ehdr elf_header;
-    ssize_t bytes_read = read(fd, &elf_header, sizeof(Elf64_Ehdr));
-    close(fd);
+void	*ft_memcpy(void *dst, const void *src, size_t n)
+{
+    void *ret;
 
-    if (bytes_read != sizeof(Elf64_Ehdr)) {
-        fprintf(stderr, "Not a valid ELF file (too small).\n");
-        return 0;
+    ret = dst;
+    while (n)
+    {
+        *(char*)dst++ = *(char*)src++;
+        n--;
     }
+    return (ret);
+}
 
+
+// returns null if fail & pointer to e_entry if good elf
+void parse_elf64(t_woodyData *data) {
     // Check ELF magic
-    if (memcmp(elf_header.e_ident, ELFMAG, SELFMAG) != 0) {
+    if (memcmp(data->elf_hdr.e_ident, ELFMAG, SELFMAG) != 0) {
         fprintf(stderr, "Not a valid ELF file (bad magic).\n");
-        return 0;
+        exit(1);
     }
 
-    // Check class (64-bit)
-    if (elf_header.e_ident[EI_CLASS] != ELFCLASS64) {
-        fprintf(stderr, "Not a 64-bit ELF file.\n");
-        return 0;
+    // Check class (64|32-bit)
+    if (data->elf_hdr.e_ident[EI_CLASS] != ELFCLASS64 
+            && data->elf_hdr.e_ident[EI_CLASS] != ELFCLASS32) {
+        fprintf(stderr, "Not a 64-bit or 32-bit ELF file.\n");
+        exit(1);
     }
 
     // Check data encoding (little/big endian)
-    if (elf_header.e_ident[EI_DATA] != ELFDATA2LSB &&
-        elf_header.e_ident[EI_DATA] != ELFDATA2MSB) {
+    if (data->elf_hdr.e_ident[EI_DATA] != ELFDATA2LSB &&
+            data->elf_hdr.e_ident[EI_DATA] != ELFDATA2MSB) {
         fprintf(stderr, "Unknown data encoding.\n");
-        return 0;
+        exit(1);
     }
 
     // Check ELF version
-    if (elf_header.e_ident[EI_VERSION] != EV_CURRENT) {
+    if (data->elf_hdr.e_ident[EI_VERSION] != EV_CURRENT) {
         fprintf(stderr, "Unknown ELF version.\n");
-        return 0;
+        exit(1);
     }
 
     // Check OS/ABI
-    if (elf_header.e_ident[EI_OSABI] != ELFOSABI_SYSV &&
-        elf_header.e_ident[EI_OSABI] != ELFOSABI_LINUX) {
+    if (data->elf_hdr.e_ident[EI_OSABI] != ELFOSABI_SYSV &&
+            data->elf_hdr.e_ident[EI_OSABI] != ELFOSABI_LINUX) {
         fprintf(stderr, "Unknown OS/ABI.\n");
-        return 0;
+        exit(1);
     }
 
     // Check ELF type (ET_EXEC or ET_DYN)
-    if (elf_header.e_type != ET_EXEC && elf_header.e_type != ET_DYN) {
+    if (data->elf_hdr.e_type != ET_EXEC && data->elf_hdr.e_type != ET_DYN
+            /* ptet a enlever, c est pour les .o */ && data->elf_hdr.e_type != ET_REL) {
         fprintf(stderr, "Not an executable or shared object.\n");
-        return 0;
+        exit(1);
+    }
+}
+
+void print_hex(const char* buffer, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        printf("%02x", (unsigned char)buffer[i]);
+        if ((i + 1) % 8 == 0) {
+            printf(" || ");
+            if ((i + 1) % 16) {
+                printf("\n");
+            }
+        }
+    }
+    printf("\n");
+}
+
+void read_file(const char *filename, t_woodyData *data) {
+    int fd = open(filename, O_RDONLY);
+    if (fd == -1) {
+        perror("open");
+        exit(1);
+    }
+    off_t size = lseek(fd, 0, SEEK_END);
+    if (size == -1) {
+        perror("Failed to seek file");
+        close(fd);
+        exit(1);
+    }
+    lseek(fd, 0, SEEK_SET); // Rewind to start
+
+    data->file_bytes = malloc(size + 1);
+
+    ssize_t bytes_read = read(fd, data->file_bytes, size);
+    if (bytes_read != size) {
+        fprintf(stderr, "Didnt read enough bytes");
+        exit(1);
+    }
+    data->file_size = size;
+    data->file_bytes[size] = 0;
+    // print_hex(data->file_bytes, size);
+    // printf("Address in hex: %#016lx\n", data.elf_hdr.e_entry);
+}
+
+void display_prgm_hdrs(t_woodyData *data) {
+
+    printf("Program Header related vars in elf header :\n");
+    printf("e_phoff :  %#016lx\n", data->elf_hdr.e_phoff);
+    printf("e_phentsize: %d\n", data->elf_hdr.e_phentsize);
+    printf("e_phnum: %d\n", data->elf_hdr.e_phnum);
+
+    Elf64_Phdr phdr;
+    
+    for (int i = 0; i < data->elf_hdr.e_phnum; i++) {
+        ft_memset(&phdr, 0, data->elf_hdr.e_phentsize);
+        size_t offset = data->elf_hdr.e_phoff + (i * data->elf_hdr.e_phentsize);
+        ft_memcpy(&phdr, &(data->file_bytes[offset]), data->elf_hdr.e_phentsize); 
+        if (phdr.p_type == 4) {
+            if (data->pt_note_pos == 0) {
+                data->pt_note_pos = &(data->file_bytes[offset]);
+                ft_memcpy(&data->pt_note ,&phdr, data->elf_hdr.e_phentsize);
+            }
+            printf("Ya du pnote  a l index %d:\n", i);
+        }
+        printf("Program Header %d:\n", i);
+        printf("  Type:   0x%x\n", phdr.p_type);
+        printf("  Offset: 0x%lx\n", phdr.p_offset);
+        printf("  VAddr:  0x%lx\n", phdr.p_vaddr);
+        printf("  PAddr:  0x%lx\n", phdr.p_paddr);
+        printf("  Filesz: 0x%lx\n", phdr.p_filesz);
+        printf("  Memsz:  0x%lx\n", phdr.p_memsz);
+        printf("  Flags:  0x%x\n", phdr.p_flags);
+        printf("  Align:  0x%lx\n", phdr.p_align);
+        printf("\n");
+    }
+}
+
+void parse_prgm_hdrs(t_woodyData *data) {
+    display_prgm_hdrs(data);
+}
+
+void store_headers(t_woodyData *data) {
+    ft_memcpy(&data->elf_hdr, data->file_bytes, sizeof(Elf64_Ehdr));
+    data->prgm_hdrs = malloc(data->elf_hdr.e_phentsize * data->elf_hdr.e_phnum); 
+    ft_memcpy(data->prgm_hdrs, data->file_bytes + data->elf_hdr.e_phoff, data->elf_hdr.e_phentsize * data->elf_hdr.e_phnum);
+}
+
+void pt_note_to_pt_load(t_woodyData *data) {
+    data->pt_note.p_type = 1; // on change en pt_load 
+    
+    data->output_bytes = malloc(data->file_size + 1);
+    data->output_bytes[data->file_size] = 0;
+    ft_memcpy(data->output_bytes, data->file_bytes, data->file_size);
+    ft_memcpy(data->pt_note_pos, data->pt_note_pos, data->elf_hdr.e_phentsize);
+}
+
+void write_file(t_woodyData *data) {
+    int fd = open("output_woody", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd == -1) {
+        perror("Failed to open file");
+        exit(1);
+    }
+    
+    ssize_t bytes_written = write(fd, data->output_bytes, data->file_size);
+    if (bytes_written == -1 || (size_t)bytes_written != data->file_size) {
+        perror("Failed to write all bytes");
+        close(fd);
+        exit(1);
     }
 
-    return 1;
+    close(fd);
 }
 
 int main(int ac, char **av)
 {
+    t_woodyData data;
+    ft_memset(&data, 0, sizeof(t_woodyData)); 
+
     if (ac != 2) {
         printf("Usage: ./woody_woodpacker FILE");
         return 1;
     }
-    // parse elf file: only header ?
-    if (!is_valid_elf64(av[1])) {
-        printf("Please input a valid ELF file\n");
-        return -1;
-    }
-    printf("%s is a valid ELF file", av[1]);
-
-    // change sections data 
-    // add a woody display
+    read_file(av[1], &data);
+    store_headers(&data);
+    parse_elf64(&data);
+    parse_prgm_hdrs(&data); // sth to parse?
+    printf("\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n");
+    printf("before \n");
+    system("readelf -l ./woody_woodpacker ");
+    printf("\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n");
+    pt_note_to_pt_load(&data);
+    write_file(&data);
+    printf("\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n");
+    printf("after \n");
+    system("readelf -l ./output_woody ");
+    printf("\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n");
+    // printf("Address in hex: %#016lx\n", data.elf_hdr.e_entry);
+    // printf("%s is a valid ELF file\n", av[1]);
+    printf("\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n");
+    system("readelf -l ./woody_woodpacker ");
+    printf("\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n");
+    // system("readelf -l ./woody_woodpacker ");
+    // find pt_note
     return 0;
 }
