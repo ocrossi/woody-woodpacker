@@ -75,8 +75,6 @@ void parse_elf64(t_woodyData *data) {
         fprintf(stderr, "Not an executable or shared object.\n");
         exit(1);
     }
-
-    printf("arg given is a valid ELF file\n");
 }
 
 void print_hex(const char* buffer, size_t n) {
@@ -161,22 +159,21 @@ void store_headers(t_woodyData *data) {
 
 }
 
-void modify_pt_note_section(t_woodyData *data) {
-    data->pt_note.p_type = 1; // pt_note to pt_load
+void pt_note_to_pt_load(t_woodyData *data) {
+    data->pt_note.p_type = 1; // can remove
     data->pt_note.p_flags = PF_W | PF_R | PF_X; // add read write exec om this section. we could just read exec but for glory 
-    data->pt_note.p_offset = data->file_size; // offset of our section to end of binary, where we ll add our payload
+                                                //
     
-
     data->output_bytes = malloc(data->file_size + 1);
     data->output_bytes[data->file_size] = 0;
     ft_memcpy(data->output_bytes, data->file_bytes, data->file_size);
 
-    // print_hex((const char *)&data->pt_note, data->elf_hdr.e_phentsize);
-    // print_hex((const char *)&data->output_bytes[data->offset_ptnote], data->elf_hdr.e_phentsize);
+    print_hex((const char *)&data->pt_note, data->elf_hdr.e_phentsize);
+    print_hex((const char *)&data->output_bytes[data->offset_ptnote], data->elf_hdr.e_phentsize);
     
     ft_memcpy(&data->output_bytes[data->offset_ptnote], &data->pt_note, data->elf_hdr.e_phentsize);
 
-    // print_hex((const char *)&data->output_bytes[data->offset_ptnote], data->elf_hdr.e_phentsize);
+    print_hex((const char *)&data->output_bytes[data->offset_ptnote], data->elf_hdr.e_phentsize);
 }
 
 void write_file(t_woodyData *data) {
@@ -208,26 +205,15 @@ void compare_prgm_headers_with_system() {
     printf("after \n");
     system("readelf -l ./output_woody ");
     printf("\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n");
-}
 
-void compare_elf_header_with_sytem(t_woodyData *data) {
-     printf("Prgm entry address in hex: %p\n", (void *)data->elf_hdr.e_entry);
+
+    // printf("Address in hex: %#016lx\n", data.elf_hdr.e_entry);
+    // printf("%s is a valid ELF file\n", av[1]);
     // printf("\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n");
     // system("readelf -l ./woody_woodpacker ");
     // printf("\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n");
     // system("readelf -l ./woody_woodpacker ");
-}
-
-void change_entrypoint(t_woodyData *data) {
-    // hexdump -C new entry would be nice at 0x1ea
-    // ehm si on change de binaire ca casse tt?
-    // on utilise que l executable de l intra pr la corr?
-    // pour 64 bits on est sur 8 bytes 
-    // char new_entrypoint[8] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0xea};
-    char new_entrypoint[8] = {0xea, 0x01, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0}; // care endianness
-    
-    // entrypoint always same offset in 64 bits
-    ft_memcpy(&data->output_bytes[0x18], new_entrypoint, 8);
+    // find pt_note
 }
 
 int main(int ac, char **av)
@@ -243,12 +229,9 @@ int main(int ac, char **av)
     store_headers(&data);
     parse_elf64(&data);
     find_ptnote_section(&data); // sth to parse?
-    modify_pt_note_section(&data);
-    change_entrypoint(&data);
-   
-    // !! etape 7 a faire
-
+    pt_note_to_pt_load(&data);
     write_file(&data);
-    // compare_elf_header_with_sytem(&data);
+    compare_prgm_headers_with_system();
+
     return 0;
 }
