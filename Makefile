@@ -1,24 +1,43 @@
-# Makefile
-
+# Compiler and flags
 CC      = gcc
 CFLAGS  = -Wall -Wextra -Werror
-SRC_DIR = sources
-OBJ_DIR = objects
+AS      = nasm
+ASFLAGS = -f elf64
 
-SRC     = $(wildcard $(SRC_DIR)/*.c)
-OBJ     = $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRC))
-HEADERS = $(wildcard $(INC_DIR)/*.h)
+# Directories
+SRC_DIR  = sources
+OBJ_DIR  = objects
+BIN_DIR  = .
+BIN_NAME = woody_woodpacker
 
-TARGET  = woody_woodpacker
+# Source files
+SRC_S    = $(wildcard $(SRC_DIR)/*.s)
+SRC_C    = $(wildcard $(SRC_DIR)/*.c)
 
+# Object files (replace .s/.c with .o and change path)
+OBJ_S    = $(patsubst $(SRC_DIR)/%.s,$(OBJ_DIR)/%.o,$(SRC_S))
+OBJ_C    = $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRC_C))
+OBJS     = $(OBJ_S) $(OBJ_C)
+
+# Target executable
+TARGET   = $(BIN_DIR)/$(BIN_NAME)
+
+# Default target
 all: $(TARGET)
 
-$(TARGET): $(OBJ) $(HEADERS)
-	@mkdir -p $(OBJ_DIR)
+# Create objects directory if it doesn't exist
+$(shell mkdir -p $(OBJ_DIR))
+
+# Link object files into executable
+$(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) $^ -o $@
 
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c $(HEADERS)
-	@mkdir -p $(OBJ_DIR)
+# Compile .s files to .o
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.s
+	$(AS) $(ASFLAGS) $< -o $@
+
+# Compile .c files to .o
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
@@ -29,4 +48,4 @@ fclean: clean
 
 re: fclean all
 
-.PHONY: all clean fclean re
+.PHONY: clean fclean re

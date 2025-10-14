@@ -4,6 +4,11 @@ https://gist.github.com/x0nu11byt3/bcb35c3de461e5fb66173071a2379779  -- cheat sh
 https://tmpout.sh/1/2.html -- how to infect using pt_note
 https://www.youtube.com/watch?v=0nWlx0smhRc -- program headers
 
+# OSDEV la frappe
+https://wiki.osdev.org/ELF
+
+
+
 Elf file format 
 used for executables, obj files & shared libraries 
 
