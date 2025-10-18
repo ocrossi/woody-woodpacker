@@ -1,0 +1,5 @@
+# Build artifacts
+pt_load_injector
+test_hello
+infected_hello
+*.o
