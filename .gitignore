@@ -1,0 +1,16 @@
+# Build artifacts
+*.o
+objects/
+output_woody
+
+# Test binaries
+test_simple
+infected_hello
+infected_pie
+test_pie
+
+# Temporary files
+*.swp
+*.swo
+*~
+.DS_Store
