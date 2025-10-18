@@ -1,11 +1,18 @@
 #include "../includes/woody.h"
 
-char shellcode_exit[] = {
-    0x31, 0xc0, 0x99, 0xb2, 0x0a, 0xff, 0xc0, 0x89,
-    0xc7, 0x48, 0x8d, 0x35, 0x12, 0x00, 0x00, 0x00,
-    0x0f, 0x05, 0xb2, 0x2a, 0x31, 0xc0, 0xff, 0xc0,
-    0xf6, 0xe2, 0x89, 0xc7, 0x31, 0xc0, 0xb0, 0x3c,
-    0x0f, 0x05, 0x2e, 0x2e, 0x57, 0x4f, 0x4f, 0x44,
+// Shellcode that prints "..WOODY..\n" and jumps back to original entry point
+// Preserves all registers, makes syscall to write message, restores registers,
+// then jumps to original entry point (address will be patched at offset 56)
+unsigned char shellcode_exit[] = {
+    0x50, 0x51, 0x52, 0x53, 0x56, 0x57, 0x55, 0x41,  // Save registers
+    0x50, 0x41, 0x51, 0x41, 0x52, 0x41, 0x53, 0xb8,
+    0x01, 0x00, 0x00, 0x00, 0xbf, 0x01, 0x00, 0x00,  // mov eax, 1; mov edi, 1
+    0x00, 0x48, 0x8d, 0x35, 0x22, 0x00, 0x00, 0x00,  // lea rsi, [rip+0x22]
+    0xba, 0x0a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0x41,  // mov edx, 10; syscall
+    0x5b, 0x41, 0x5a, 0x41, 0x59, 0x41, 0x58, 0x5d,  // Restore registers
+    0x5f, 0x5e, 0x5b, 0x5a, 0x59, 0x58, 0x48, 0xb8,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rax, 0x0 (patched)
+    0xff, 0xe0, 0x2e, 0x2e, 0x57, 0x4f, 0x4f, 0x44,  // jmp rax; "..WOODY..\n"
     0x59, 0x2e, 0x2e, 0x0a
 };
 
@@ -146,8 +153,18 @@ void prepare_output_file(t_woodyData *data) {
 }
 
 void change_entrypoint(t_woodyData *data) {
-    char new_entrypoint[4] = {0x00, 0x00, 0x00, 0x0c}; // care endianness
-    ft_memcpy(&data->output_bytes[0x18], new_entrypoint, 4);
+    // Save original entry point from ELF header
+    data->original_entry = data->elf_hdr.e_entry;
+    
+    // Patch the shellcode with the original entry point address
+    // The address is at offset 56 in the shellcode (after movabs opcode)
+    ft_memcpy(&shellcode_exit[56], &data->original_entry, sizeof(uint64_t));
+    
+    // Set new entry point to the virtual address of our injected code
+    uint64_t new_entry = data->pt_note.p_vaddr;
+    
+    // Copy new entry point to ELF header (e_entry is at offset 0x18)
+    ft_memcpy(&data->output_bytes[0x18], &new_entry, sizeof(uint64_t));
 }
 
 void write_file(t_woodyData *data) {
@@ -187,7 +204,7 @@ int main(int ac, char **av)
 
     // defines?
     data.length_ptload = 256;
-    data.length_shellcode = 48;
+    data.length_shellcode = sizeof(shellcode_exit);
     printf("data.length_shellcode = %ld\n", data.length_shellcode);
     if (ac != 2) {
         printf("Usage: ./woody_woodpacker FILE");

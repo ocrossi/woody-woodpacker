@@ -19,6 +19,7 @@ typedef struct s_woodyData {
     Elf64_Phdr pt_note;
     Elf64_Ehdr elf_hdr;
     Elf64_Phdr *prgm_hdrs;
+    uint64_t original_entry;  // Store original entry point
 } t_woodyData;
 
 
