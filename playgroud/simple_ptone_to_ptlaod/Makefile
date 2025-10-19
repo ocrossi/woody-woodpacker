@@ -13,13 +13,17 @@ TARGET  = woody_woodpacker
 
 all: $(TARGET)
 
+# $(CC) $(CFLAGS) $^ -o $@
+
 $(TARGET): $(OBJ) $(HEADERS)
 	@mkdir -p $(OBJ_DIR)
-	$(CC) $(CFLAGS) $^ -o $@
+	$(CC) $^ -o $@
+
+#$(CC) $(CFLAGS) -c $< -o $@
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c $(HEADERS)
 	@mkdir -p $(OBJ_DIR)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) -c $< -o $@
 
 clean:
 	rm -rf $(OBJ_DIR)

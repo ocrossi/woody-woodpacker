@@ -1,0 +1,3 @@
+nasm -f elf64 hello.asm && ld hello.o -o hello && ./hello
+objdump -d hello -M intel
+f=hello_clean; nasm -f elf64 hello_clean.asm && ld hello_clean.o -o hello_clean && ./hello_clean

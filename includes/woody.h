@@ -15,7 +15,8 @@ typedef struct s_woodyData {
     size_t length_shellcode;
     size_t file_size;
     size_t offset_ptnote; // how many bytes starting at the beginning of the file
- 
+
+    uint64_t original_entry;  // Store original entry point
     Elf64_Phdr pt_note;
     Elf64_Ehdr elf_hdr;
     Elf64_Phdr *prgm_hdrs;

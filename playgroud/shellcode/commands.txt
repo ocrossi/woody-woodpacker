@@ -1,2 +1,5 @@
-nasm -f bin -o payload test.s
-xxd -i -c 8 < payload | less
+nasm -f bin -o payload test.s -> compile .s file 
+xxd -i -c 8 < payload | less -> get payload in readable bytes form 
+
+gcc -S -masm=intel test_write.c -> compile to a .s file 
+cpp test_write.c -> expands macros and includes, c est tres style
