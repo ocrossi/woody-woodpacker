@@ -1,5 +1,8 @@
 # Build artifacts
 pt_load_injector
 test_hello
+test_hello_pie
+test_pie_info
 infected_hello
+infected_hello_pie
 *.o
