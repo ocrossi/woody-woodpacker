@@ -6,3 +6,6 @@ test_pie_info
 infected_hello
 infected_hello_pie
 *.o
+
+# Demo scripts
+compare_executables.sh
