@@ -1,10 +1,13 @@
 # Build artifacts
 pt_load_injector
+encrypt_decrypt
 test_hello
 test_hello_pie
 test_pie_info
 infected_hello
 infected_hello_pie
+encrypted_*
+decrypted_*
 *.o
 
 # Demo scripts
