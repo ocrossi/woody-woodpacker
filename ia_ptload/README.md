@@ -1,6 +1,12 @@
-# PT_LOAD Segment Injection
+# PT_LOAD Segment Injection with XOR-Stream Encryption
 
-This directory contains an implementation of the PT_LOAD segment injection technique described in https://tmpout.sh/1/2.html, with enhanced support for Position Independent Executables (PIE).
+This directory contains an implementation of the PT_LOAD segment injection technique described in https://tmpout.sh/1/2.html, with enhanced support for Position Independent Executables (PIE), plus XOR-stream encryption/decryption tools.
+
+## Features
+
+- **PT_LOAD Injection**: Inject code into ELF binaries by repurposing PT_NOTE segments
+- **PIE Support**: Works with both PIE and non-PIE executables
+- **XOR-Stream Encryption**: Encrypt and decrypt output files using a tiny Xorshift32 PRNG
 
 ## What it does
 
@@ -158,36 +164,81 @@ The injector automatically detects the executable type by examining the ELF head
 ## Files
 
 - `pt_load_injector.c` - Main injector program that performs the PT_LOAD injection
+- `encrypt_decrypt.c` - XOR-stream encryption/decryption tool using Xorshift32 PRNG
 - `test_hello.c` - Test program that prints "hello normal world"
 - `Makefile` - Build configuration with test targets for both PIE and non-PIE
 - `README.md` - This file
+- `ENCRYPTION.md` - Detailed documentation about the encryption feature
 
 ## Usage
 
 ```bash
-# Build everything (both PIE and non-PIE test executables)
+# Build everything (both PIE and non-PIE test executables plus tools)
 make
 
-# Run the automated test (tests both PIE and non-PIE)
+# Run the automated test (tests both PIE and non-PIE plus encryption)
 make test
 
 # Or manually:
+# 1. Create infected binary
 ./pt_load_injector test_hello infected_hello
 ./infected_hello
 
+# 2. Encrypt the infected binary
+./encrypt_decrypt infected_hello encrypted_infected_hello
+
+# 3. Decrypt it back
+./encrypt_decrypt encrypted_infected_hello decrypted_infected_hello
+
+# 4. Verify it still works
+./decrypted_infected_hello
+
+# PIE version:
 ./pt_load_injector test_hello_pie infected_hello_pie
 ./infected_hello_pie
+./encrypt_decrypt infected_hello_pie encrypted_infected_hello_pie
+./encrypt_decrypt encrypted_infected_hello_pie decrypted_infected_hello_pie
+./decrypted_infected_hello_pie
 ```
 
 ## Expected Output
 
-When running the infected executables, you should see:
+When running the tests, you should see:
+
+### Infected Binary
 ```
+./infected_hello
 hello world from pt_load
  hello normal world
 ```
 
-This works identically for both PIE and non-PIE executables, demonstrating successful injection and control flow transfer.
+### Encryption/Decryption
+```
+./encrypt_decrypt infected_hello encrypted_infected_hello
+Successfully processed file: infected_hello -> encrypted_infected_hello
+File size: 15964 bytes
+XOR-stream encryption/decryption applied with PRNG seed: 0xDEADBEEF
+
+./encrypted_infected_hello
+bash: ./encrypted_infected_hello: cannot execute binary file: Exec format error
+
+./encrypt_decrypt encrypted_infected_hello decrypted_infected_hello
+Successfully processed file: encrypted_infected_hello -> decrypted_infected_hello
+File size: 15964 bytes
+XOR-stream encryption/decryption applied with PRNG seed: 0xDEADBEEF
+
+./decrypted_infected_hello
+hello world from pt_load
+ hello normal world
+```
+
+This demonstrates:
+1. PT_LOAD injection works and executes the payload
+2. Files can be encrypted (rendering them unexecutable)
+3. Files can be decrypted (restoring full functionality)
+4. The encryption/decryption process is reversible and lossless
+
+This works identically for both PIE and non-PIE executables, demonstrating successful injection, encryption, and decryption.
 
 ## Building PIE vs Non-PIE Executables
 
