@@ -1,0 +1,7 @@
+# Build artifacts
+objects/
+*.o
+woody_woodpacker
+
+# Output files
+output

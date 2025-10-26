@@ -134,9 +134,22 @@ void write_file(t_woodyData *data) {
     }
     dprintf(1, "red %ld \n", bytes_read);
 
+    // Patch shellcode with injection address and original entry point
+    unsigned char patched_code[sizeof(code)];
+    memcpy(patched_code, code, sizeof(code));
+    
+    // Patch injection_vaddr at offset 63 (after the movabs rbx instruction opcode)
+    // We add 61 because that's where RIP will be when lea rax,[rip] executes
+    uint64_t injection_vaddr = data->pt_load.p_vaddr + 61;
+    memcpy(&patched_code[63], &injection_vaddr, sizeof(uint64_t));
+    
+    // Patch original_entry at offset 76 (after the second movabs rbx instruction opcode)
+    uint64_t original_entry = data->elf_hdr.e_entry;
+    memcpy(&patched_code[76], &original_entry, sizeof(uint64_t));
+
     memcpy(&output[0x18], &data->new_entrypoint, sizeof(void *));
     memcpy(&output[data->offset_ptnote], &data->pt_load, sizeof(Elf64_Phdr));
-    memcpy(&code, &output[data->file_size], data->payload_size);
+    memcpy(&output[data->file_size], patched_code, data->payload_size);
 
     write(fd_out, output, data->file_size + data->payload_size);
 
