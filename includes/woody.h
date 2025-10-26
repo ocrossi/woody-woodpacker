@@ -12,6 +12,7 @@ typedef struct s_woodyData {
     void *new_entrypoint;
 
     int payload_size;
+    uint64_t injection_addr;
 
     int fd;
 
@@ -21,4 +22,7 @@ typedef struct s_woodyData {
     Elf64_Phdr *prgm_hdrs;
 } t_woodyData;
 
-#define PAYLOAD_SIZE 64
+extern ssize_t syscall_random(void *buf, int size);
+void print_hex(const char* buffer, size_t n);
+
+#define KEY_SIZE 64

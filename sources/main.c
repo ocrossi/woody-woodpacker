@@ -1,4 +1,5 @@
 #include "../includes/woody.h"
+#include <unistd.h>
 
 unsigned char code[] = {
     // Save all callee-saved registers
@@ -17,7 +18,7 @@ unsigned char code[] = {
     0xb8, 0x01, 0x00, 0x00, 0x00,       // mov eax, 1 (sys_write)
     0xbf, 0x01, 0x00, 0x00, 0x00,       // mov edi, 1 (stdout)
     0x48, 0x8d, 0x35, 0x39, 0x00, 0x00, 0x00,  // lea rsi, [rip+0x39]  (message)
-    0xba, 0x1a, 0x00, 0x00, 0x00,       // mov edx, 26 (message length)
+    0xba, 0xf, 0x00, 0x00, 0x00,       // mov edx, 15 (message length)
     0x0f, 0x05,                         // syscall
     // Restore all registers
     0x41, 0x5b,                         // pop r11
@@ -44,9 +45,7 @@ unsigned char code[] = {
     0x48, 0x01, 0xd8,                   // add rax, rbx
     // Jump to the calculated address
     0xff, 0xe0,                         // jmp rax
-    // Message: "hello world from pt_load\n"
-    'h', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd', ' ',
-    'f', 'r', 'o', 'm', ' ', 'p', 't', '_', 'l', 'o', 'a', 'd', '\n', 0x00
+    '.','.','.','.','W', 'O', 'O', 'D', 'Y','.','.','.','.', '\n', 0x00
 };
 
 
@@ -100,20 +99,37 @@ void change_pt_note(t_woodyData *data) {
     memcpy(&data->pt_load, &data->pt_note, sizeof(Elf64_Phdr));
 
 
-    uint64_t injection_addr = 0xc000000 +  data->file_size;
+    data->injection_addr = 0xc000000 +  data->file_size;
 
     data->pt_load.p_type = PT_LOAD; // pt_note to pt_load en changeant type
     data->pt_load.p_flags = PF_X | PF_W | PF_R; // pt_note to pt_load en changeant type
     data->pt_load.p_offset = data->file_size;
-    data->pt_load.p_vaddr = injection_addr;
-    data->pt_load.p_paddr = injection_addr;
+    data->pt_load.p_vaddr = data->injection_addr;
+    // data->pt_load.p_paddr = injection_addr;
     data->pt_load.p_filesz = data->payload_size; 
     data->pt_load.p_memsz = data->payload_size;
-    data->pt_load.p_align = 0x1000;
+    // data->pt_load.p_align = 0x1000;
     data->new_entrypoint = (void *)data->pt_load.p_vaddr;
 }
 
-void write_file(t_woodyData *data) {
+void write_shellcode(t_woodyData *data, char *output) {
+    unsigned char *shellcode_with_ret = malloc(sizeof(data->payload_size));
+
+    if (shellcode_with_ret == NULL) {
+        perror("Malloc failed for shellcode allocation");
+        free(shellcode_with_ret);
+        exit(1);
+    }
+    
+    uint64_t offset_placeholder = data->injection_addr + 61; //pos 1er placeholder
+    
+    memcpy(shellcode_with_ret, code, data->payload_size);
+    memcpy(shellcode_with_ret + 63, &offset_placeholder, sizeof(uint64_t));
+    memcpy(shellcode_with_ret + 76, &data->elf_hdr.e_entry, sizeof(uint64_t));
+    memcpy(&output[data->file_size], shellcode_with_ret, data->payload_size);
+}
+
+char* write_output_data(t_woodyData *data) {
     lseek(data->fd, 0, SEEK_SET); // on repart au debut du fichier
     int fd_out = open("output", O_WRONLY | O_CREAT | O_TRUNC | O_APPEND, 0644);
     if (fd_out < 3) {
@@ -136,29 +152,46 @@ void write_file(t_woodyData *data) {
 
     memcpy(&output[0x18], &data->new_entrypoint, sizeof(void *));
     memcpy(&output[data->offset_ptnote], &data->pt_load, sizeof(Elf64_Phdr));
-    memcpy(&code, &output[data->file_size], data->payload_size);
 
-    write(fd_out, output, data->file_size + data->payload_size);
 
-    dprintf(1, "written\n");
+    write_shellcode(data, output);
+    
+    // write(fd_out, output, data->file_size + data->payload_size);
+    // dprintf(1, "written\n");
+    return output;
 }
 
-void infect_file(const char *filename) {
+char* infect_output_data(const char *filename) {
     t_woodyData data = read_store_headers(filename); 
     data.file_size = lseek(data.fd, 0, SEEK_END); // on recup la taille du fichier
     data.payload_size = sizeof(code);
     printf("data->payload size = %d\n", data.payload_size);
     change_pt_note(&data);
-    write_file(&data);
+    char *output_bytes = write_output_data(&data);
+    return output_bytes;
+}
+
+void encrypt_output_data(char *output_bytes) {
+    (void)output_bytes;
+    char str[KEY_SIZE];
+    memset(str, 'a', KEY_SIZE);  
+    dprintf(1, "yo\n");
+    syscall_random(str, KEY_SIZE);
+    dprintf(1, "yo\n");
+    print_hex(str, KEY_SIZE);
 }
 
 int main(int argc, char *argv[])
 {
+    char *output_bytes;
     if (argc != 2) {
         printf("Wrong number of args\n");
         return EXIT_FAILURE;
     }
-    infect_file(argv[1]);
+    output_bytes = infect_output_data(argv[1]);
+    
+    encrypt_output_data(output_bytes);
+    // write_output_file
 
     return EXIT_SUCCESS;
 }
