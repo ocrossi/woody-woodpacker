@@ -14,8 +14,16 @@ BIN_NAME = woody_woodpacker
 SRC_S    = $(wildcard $(SRC_DIR)/*.s)
 SRC_C    = $(wildcard $(SRC_DIR)/*.c)
 
+# Payload files (excluded from main build)
+PAYLOAD_S = $(SRC_DIR)/payload.s
+PAYLOAD_H = $(SRC_DIR)/payload_data.h
+
+# Filter out payload from C sources for linking
+SRC_C_MAIN = $(SRC_C)
+
 # Object files (replace .s/.c with .o and change path)
-OBJ_S    = $(patsubst $(SRC_DIR)/%.s,$(OBJ_DIR)/%.o,$(SRC_S))
+# Exclude payload.s from objects to link
+OBJ_S    = $(filter-out $(OBJ_DIR)/payload.o, $(patsubst $(SRC_DIR)/%.s,$(OBJ_DIR)/%.o,$(SRC_S)))
 OBJ_C    = $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRC_C))
 OBJS     = $(OBJ_S) $(OBJ_C)
 
@@ -28,20 +36,25 @@ all: $(TARGET)
 # Create objects directory if it doesn't exist
 $(shell mkdir -p $(OBJ_DIR))
 
+# Generate payload header before building
+$(PAYLOAD_H): $(PAYLOAD_S)
+	./generate_payload.sh
+
 # Link object files into executable
-$(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) $^ -o $@
+$(TARGET): $(PAYLOAD_H) $(OBJS)
+	$(CC) $(CFLAGS) $(filter-out $(PAYLOAD_H),$^) -o $@
 
 # Compile .s files to .o
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.s
 	$(AS) $(ASFLAGS) $< -o $@
 
-# Compile .c files to .o
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
+# Compile .c files to .o (depend on payload header)
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c $(PAYLOAD_H)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
 	rm -rf $(OBJ_DIR)
+	rm -f $(PAYLOAD_H)
 
 fclean: clean
 	rm -f $(TARGET)
