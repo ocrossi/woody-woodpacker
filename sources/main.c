@@ -1,53 +1,5 @@
 #include "../includes/woody.h"
-
-unsigned char code[] = {
-    // Save all callee-saved registers
-    0x50,                               // push rax
-    0x51,                               // push rcx
-    0x52,                               // push rdx
-    0x53,                               // push rbx
-    0x56,                               // push rsi
-    0x57,                               // push rdi
-    0x55,                               // push rbp
-    0x41, 0x50,                         // push r8
-    0x41, 0x51,                         // push r9
-    0x41, 0x52,                         // push r10
-    0x41, 0x53,                         // push r11
-    // write(1, message, message_len)
-    0xb8, 0x01, 0x00, 0x00, 0x00,       // mov eax, 1 (sys_write)
-    0xbf, 0x01, 0x00, 0x00, 0x00,       // mov edi, 1 (stdout)
-    0x48, 0x8d, 0x35, 0x39, 0x00, 0x00, 0x00,  // lea rsi, [rip+0x39]  (message)
-    0xba, 0x1a, 0x00, 0x00, 0x00,       // mov edx, 26 (message length)
-    0x0f, 0x05,                         // syscall
-    // Restore all registers
-    0x41, 0x5b,                         // pop r11
-    0x41, 0x5a,                         // pop r10
-    0x41, 0x59,                         // pop r9
-    0x41, 0x58,                         // pop r8
-    0x5d,                               // pop rbp
-    0x5f,                               // pop rdi
-    0x5e,                               // pop rsi
-    0x5b,                               // pop rbx
-    0x5a,                               // pop rdx
-    0x59,                               // pop rcx
-    0x58,                               // pop rax
-    // For PIE: Calculate base address and add original entry offset
-    // Get current RIP into rax
-    0x48, 0x8d, 0x05, 0x00, 0x00, 0x00, 0x00,  // lea rax, [rip]  (current address)
-    // Load injection_vaddr into rbx (will be patched)
-    0x48, 0xbb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rbx, injection_vaddr (10 bytes)
-    // Calculate base: base = current_rip - injection_vaddr
-    0x48, 0x29, 0xd8,                   // sub rax, rbx
-    // Load original entry offset into rbx (will be patched)
-    0x48, 0xbb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rbx, original_entry (10 bytes)
-    // Calculate actual entry: actual_entry = base + original_entry
-    0x48, 0x01, 0xd8,                   // add rax, rbx
-    // Jump to the calculated address
-    0xff, 0xe0,                         // jmp rax
-    // Message: "hello world from pt_load\n"
-    'h', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd', ' ',
-    'f', 'r', 'o', 'm', ' ', 'p', 't', '_', 'l', 'o', 'a', 'd', '\n', 0x00
-};
+#include "payload_data.h"
 
 
 
@@ -136,7 +88,7 @@ void write_file(t_woodyData *data) {
 
     memcpy(&output[0x18], &data->new_entrypoint, sizeof(void *));
     memcpy(&output[data->offset_ptnote], &data->pt_load, sizeof(Elf64_Phdr));
-    memcpy(&code, &output[data->file_size], data->payload_size);
+    memcpy(&output[data->file_size], &code, data->payload_size);
 
     write(fd_out, output, data->file_size + data->payload_size);
 
