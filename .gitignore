@@ -1,0 +1,7 @@
+# Build artifacts
+objects/
+output
+woody_woodpacker
+
+# Generated files
+sources/payload_data.h
