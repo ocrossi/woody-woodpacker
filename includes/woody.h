@@ -22,7 +22,7 @@ typedef struct s_woodyData {
     Elf64_Phdr *prgm_hdrs;
 } t_woodyData;
 
-extern ssize_t syscall_random(void *buf, int size);
+extern char* syscall_random(void *buf, int size);
 void print_hex(const char* buffer, size_t n);
 
 #define KEY_SIZE 64

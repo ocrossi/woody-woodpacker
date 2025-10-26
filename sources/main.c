@@ -153,7 +153,6 @@ char* write_output_data(t_woodyData *data) {
     memcpy(&output[0x18], &data->new_entrypoint, sizeof(void *));
     memcpy(&output[data->offset_ptnote], &data->pt_load, sizeof(Elf64_Phdr));
 
-
     write_shellcode(data, output);
     
     // write(fd_out, output, data->file_size + data->payload_size);
@@ -174,11 +173,10 @@ char* infect_output_data(const char *filename) {
 void encrypt_output_data(char *output_bytes) {
     (void)output_bytes;
     char str[KEY_SIZE];
-    memset(str, 'a', KEY_SIZE);  
+    memset(str, 0, KEY_SIZE);
     dprintf(1, "yo\n");
     syscall_random(str, KEY_SIZE);
-    dprintf(1, "yo\n");
-    print_hex(str, KEY_SIZE);
+    dprintf(1, "yo %s\n", str);
 }
 
 int main(int argc, char *argv[])
