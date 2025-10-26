@@ -174,9 +174,10 @@ void encrypt_output_data(char *output_bytes) {
     (void)output_bytes;
     char str[KEY_SIZE];
     memset(str, 0, KEY_SIZE);
-    dprintf(1, "yo\n");
     syscall_random(str, KEY_SIZE);
-    dprintf(1, "yo %s\n", str);
+    print_hex(str, KEY_SIZE);
+    // key to base64 for printable output
+    // encrpyt section text 
 }
 
 int main(int argc, char *argv[])
