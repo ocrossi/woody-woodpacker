@@ -1,0 +1,10 @@
+# Build artifacts
+objects/
+*.o
+woody_woodpacker
+
+# Output files
+output
+
+# CodeQL
+_codeql_detected_source_root
