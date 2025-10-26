@@ -174,9 +174,9 @@ void encrypt_output_data(char *output_bytes) {
     (void)output_bytes;
     char str[KEY_SIZE];
     memset(str, 0, KEY_SIZE);
-    dprintf(1, "yo\n");
+    dprintf(1, "Random key generated:\n");
     syscall_random(str, KEY_SIZE);
-    dprintf(1, "yo %s\n", str);
+    print_hex(str, KEY_SIZE);
 }
 
 int main(int argc, char *argv[])
