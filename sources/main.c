@@ -1,234 +1,164 @@
 #include "../includes/woody.h"
 
-// char shellcode_exit[] = {
-//     0x31, 0xc0, 0x99, 0xb2, 0x0a, 0xff, 0xc0, 0x89,
-//     0xc7, 0x48, 0x8d, 0x35, 0x12, 0x00, 0x00, 0x00,
-//     0x0f, 0x05, 0xb2, 0x2a, 0x31, 0xc0, 0xff, 0xc0,
-//     0xf6, 0xe2, 0x89, 0xc7, 0x31, 0xc0, 0xb0, 0x3c,
-//     0x0f, 0x05, 0x2e, 0x2e, 0x57, 0x4f, 0x4f, 0x44,
-//     0x59, 0x2e, 0x2e, 0x0a
-// };
-
-unsigned char shellcode_exit[] = {
-    0x50, 0x51, 0x52, 0x53, 0x56, 0x57, 0x55, 0x41,  // Save registers
-    0x50, 0x41, 0x51, 0x41, 0x52, 0x41, 0x53, 0xb8,
-    0x01, 0x00, 0x00, 0x00, 0xbf, 0x01, 0x00, 0x00,  // mov eax, 1; mov edi, 1
-    0x00, 0x48, 0x8d, 0x35, 0x22, 0x00, 0x00, 0x00,  // lea rsi, [rip+0x22]
-    0xba, 0x0a, 0x00, 0x00, 0x00, 0x0f, 0x05, 0x41,  // mov edx, 10; syscall
-    0x5b, 0x41, 0x5a, 0x41, 0x59, 0x41, 0x58, 0x5d,  // Restore registers
-    0x5f, 0x5e, 0x5b, 0x5a, 0x59, 0x58, 0x48, 0xb8,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rax, 0x0 (patched)
-    0xff, 0xe0, 0x2e, 0x2e, 0x57, 0x4f, 0x4f, 0x44,  // jmp rax; "..WOODY..\n"
-    // 0x59, 0x2e, 0x2e, 0x0a
+unsigned char code[] = {
+    // Save all callee-saved registers
+    0x50,                               // push rax
+    0x51,                               // push rcx
+    0x52,                               // push rdx
+    0x53,                               // push rbx
+    0x56,                               // push rsi
+    0x57,                               // push rdi
+    0x55,                               // push rbp
+    0x41, 0x50,                         // push r8
+    0x41, 0x51,                         // push r9
+    0x41, 0x52,                         // push r10
+    0x41, 0x53,                         // push r11
+    // write(1, message, message_len)
+    0xb8, 0x01, 0x00, 0x00, 0x00,       // mov eax, 1 (sys_write)
+    0xbf, 0x01, 0x00, 0x00, 0x00,       // mov edi, 1 (stdout)
+    0x48, 0x8d, 0x35, 0x39, 0x00, 0x00, 0x00,  // lea rsi, [rip+0x39]  (message)
+    0xba, 0x1a, 0x00, 0x00, 0x00,       // mov edx, 26 (message length)
+    0x0f, 0x05,                         // syscall
+    // Restore all registers
+    0x41, 0x5b,                         // pop r11
+    0x41, 0x5a,                         // pop r10
+    0x41, 0x59,                         // pop r9
+    0x41, 0x58,                         // pop r8
+    0x5d,                               // pop rbp
+    0x5f,                               // pop rdi
+    0x5e,                               // pop rsi
+    0x5b,                               // pop rbx
+    0x5a,                               // pop rdx
+    0x59,                               // pop rcx
+    0x58,                               // pop rax
+    // For PIE: Calculate base address and add original entry offset
+    // Get current RIP into rax
+    0x48, 0x8d, 0x05, 0x00, 0x00, 0x00, 0x00,  // lea rax, [rip]  (current address)
+    // Load injection_vaddr into rbx (will be patched)
+    0x48, 0xbb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rbx, injection_vaddr (10 bytes)
+    // Calculate base: base = current_rip - injection_vaddr
+    0x48, 0x29, 0xd8,                   // sub rax, rbx
+    // Load original entry offset into rbx (will be patched)
+    0x48, 0xbb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rbx, original_entry (10 bytes)
+    // Calculate actual entry: actual_entry = base + original_entry
+    0x48, 0x01, 0xd8,                   // add rax, rbx
+    // Jump to the calculated address
+    0xff, 0xe0,                         // jmp rax
+    // Message: "hello world from pt_load\n"
+    'h', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd', ' ',
+    'f', 'r', 'o', 'm', ' ', 'p', 't', '_', 'l', 'o', 'a', 'd', '\n', 0x00
 };
 
 
-/* 
- * lit le fichier d inputs  
- * stocke la taille du fichier dans data->file_size
- * stocke le fichier en bytes dans data->file_bytes 
- * */
-void read_file(const char *filename, t_woodyData *data) {
-    int fd = open(filename, O_RDONLY);
-    if (fd == -1) {
-        perror("open");
-        exit(1);
-    }
-    off_t size = lseek(fd, 0, SEEK_END);
-    data->file_size = size;
-    if (size == -1) {
-        perror("Failed to seek file");
-        close(fd);
-        exit(1);
-    }
-    lseek(fd, 0, SEEK_SET); // Rewind to start
 
-    data->file_bytes = malloc(size + 1);
-
-    ssize_t bytes_read = read(fd, data->file_bytes, size);
-    if (bytes_read != size) {
-        fprintf(stderr, "Didnt read enough bytes");
+void read_store_elf_header(const char *filename, t_woodyData *data) {
+    data->fd = open(filename, O_RDONLY);
+    if (data->fd < 3) {
+        printf("Couldnt open filename %s\n", filename);
         exit(1);
     }
-    printf("data->filesize = %ld\n", data->file_size);
+    ssize_t bytes_read = read(data->fd, &data->elf_hdr, sizeof(Elf64_Ehdr));
+    if (bytes_read == -1 || bytes_read != sizeof(Elf64_Ehdr)) {
+        printf("couldnt read %s correctly\n", filename);
+        exit(1);
+    }
 }
 
-/* 
- * copie le header elf de file_bytes vers une struct Elf_header
- * alloue un tableau de program headers 
- * copie les program headers de file_bytes vers la zone allouee
- * */
-void store_headers(t_woodyData *data) {
-    ft_memcpy(&data->elf_hdr, data->file_bytes, sizeof(Elf64_Ehdr));
-    data->prgm_hdrs = malloc(data->elf_hdr.e_phentsize * data->elf_hdr.e_phnum); 
-    ft_memcpy(data->prgm_hdrs, data->file_bytes + data->elf_hdr.e_phoff, data->elf_hdr.e_phentsize * data->elf_hdr.e_phnum);
-}
-
-void parse_elf64(t_woodyData *data) {
-    // Check ELF magic
-    if (ft_memcmp(data->elf_hdr.e_ident, ELFMAG, SELFMAG) != 0) {
-        fprintf(stderr, "Not a valid ELF file (bad magic).\n");
-        exit(1);
-    }
-
-    // Check class (64|32-bit)
-    if (data->elf_hdr.e_ident[EI_CLASS] != ELFCLASS64 
-            && data->elf_hdr.e_ident[EI_CLASS] != ELFCLASS32) {
-        fprintf(stderr, "Not a 64-bit or 32-bit ELF file.\n");
-        exit(1);
-    }
-
-    // Check data encoding (little/big endian)
-    if (data->elf_hdr.e_ident[EI_DATA] != ELFDATA2LSB &&
-            data->elf_hdr.e_ident[EI_DATA] != ELFDATA2MSB) {
-        fprintf(stderr, "Unknown data encoding.\n");
-        exit(1);
-    }
-
-    // Check ELF version
-    if (data->elf_hdr.e_ident[EI_VERSION] != EV_CURRENT) {
-        fprintf(stderr, "Unknown ELF version.\n");
-        exit(1);
-    }
-
-    // Check OS/ABI
-    if (data->elf_hdr.e_ident[EI_OSABI] != ELFOSABI_SYSV &&
-            data->elf_hdr.e_ident[EI_OSABI] != ELFOSABI_LINUX) {
-        fprintf(stderr, "Unknown OS/ABI.\n");
-        exit(1);
-    }
-
-    // Check ELF type (ET_EXEC or ET_DYN)
-    if (data->elf_hdr.e_type != ET_EXEC && data->elf_hdr.e_type != ET_DYN
-            /* ptet a enlever, c est pour les .o */ && data->elf_hdr.e_type != ET_REL) {
-        fprintf(stderr, "Not an executable or shared object.\n");
-        exit(1);
-    }
-
-    printf("arg given is a valid ELF file\n");
-}
-
-void find_ptnote_section(t_woodyData *data) {
-    printf("Program Header related vars in elf header :\n");
-    printf("e_phoff :  %#016lx\n", data->elf_hdr.e_phoff);
-    printf("e_phentsize: %d\n", data->elf_hdr.e_phentsize);
-    printf("e_phnum: %d\n", data->elf_hdr.e_phnum);
-
-    Elf64_Phdr phdr;
-    
+Elf64_Phdr read_phdrs_store_ptnote(t_woodyData *data) {
+    ssize_t bytes_read = 0;
     for (int i = 0; i < data->elf_hdr.e_phnum; i++) {
-        ft_memset(&phdr, 0, data->elf_hdr.e_phentsize);
-        size_t offset = data->elf_hdr.e_phoff + (i * data->elf_hdr.e_phentsize);
-        ft_memcpy(&phdr, &(data->file_bytes[offset]), data->elf_hdr.e_phentsize); 
-        if (phdr.p_type == 4) {
-            if (data->offset_ptnote == 0) {
-                print_program_header(phdr);
-                data->offset_ptnote = offset;
-                ft_memcpy(&data->pt_note ,&phdr, data->elf_hdr.e_phentsize);
-                printf("store ptnote offset data %ld\n", data->offset_ptnote);
-                printf("Ya du pnote  a l index %d:\n", i);
-                return;
-            }
+        Elf64_Phdr current;
+        int offset = data->elf_hdr.e_phoff + i * data->elf_hdr.e_phentsize;
+        lseek(data->fd, offset, SEEK_SET);
+        memset(&current, 0, sizeof(Elf64_Phdr));
+        bytes_read = read(data->fd, &current, data->elf_hdr.e_phentsize);
+        if (bytes_read != data->elf_hdr.e_phentsize) {
+            printf("Couldnt read program headers correctly\n");
+            exit(1);
+        }
+        if (current.p_type == PT_NOTE) {
+            data->offset_ptnote = offset; 
+            printf("pt_note found\n");
+            return current;
         }
     }
-    printf("No pt_note program header found, exiting...\n");
+    printf("Fatal, didnt find any PT_Note program header");
     exit(1);
 }
 
-void modify_pt_note_section(t_woodyData *data) {
-    data->pt_note.p_type = 1; // pt_note to pt_load
-    data->pt_note.p_flags = PF_R | PF_X; // add read exec on segment 
-    // data->pt_note.p_vaddr = 0xc000000 + data->file_size; est ce qu on peut juste mettre a une valeur fixe?
-    data->pt_note.p_vaddr = 0xc000000 + data->file_size;
-    
-    // accomodate some room for payload code
-    // printf("before changing segment size pt_note filesz %ld\n", data->pt_note.p_filesz);
-    // printf("before changing segment size pt_note memsz %ld\n", data->pt_note.p_memsz);
-    // data->pt_note.p_filesz += data->length_ptload; 
-    // data->pt_note.p_memsz += data->length_ptload;
-    data->pt_note.p_filesz += data->length_shellcode; 
-    data->pt_note.p_memsz += data->length_shellcode;
-    // point to EOF where we ll put the code
-    // c est ici? on est pas cense le copier au meme endroit?
-    data->pt_note.p_offset = data->file_size;
+t_woodyData read_store_headers(const char *filename) {
+    t_woodyData data;
+
+    memset(&data, 0, sizeof(t_woodyData));
+    read_store_elf_header(filename, &data);
+    data.pt_note = read_phdrs_store_ptnote(&data);
+
+    return data;
 }
 
-void prepare_output_file(t_woodyData *data) {
-    data->output_bytes = malloc(data->file_size + data->length_ptload + 1);
-    ft_memcpy(data->output_bytes, data->file_bytes, data->file_size);
-    ft_memcpy(&data->output_bytes[data->offset_ptnote], &data->pt_note, data->elf_hdr.e_phentsize);
-}
+void change_pt_note(t_woodyData *data) {
+    memcpy(&data->pt_load, &data->pt_note, sizeof(Elf64_Phdr));
 
-void change_entrypoint(t_woodyData *data) {
-    // char new_entrypoint[4] = {0x00, 0x00, 0x00, 0x0c}; // care endianness
-    // ft_memcpy(&data->output_bytes[0x18], new_entrypoint, 4);
-    data->original_entry = data->elf_hdr.e_entry;
 
-    // Patch the shellcode with the original entry point address
-    // The address is at offset 56 in the shellcode (after movabs opcode)
-    ft_memcpy(&shellcode_exit[56], &data->original_entry, sizeof(uint64_t));
+    uint64_t injection_addr = 0xc000000 +  data->file_size;
 
-    // Set new entry point to the virtual address of our injected code
-    uint64_t new_entry = data->pt_note.p_vaddr;
-
-    // Copy new entry point to ELF header (e_entry is at offset 0x18)
-    ft_memcpy(&data->output_bytes[0x18], &new_entry, sizeof(uint64_t));
+    data->pt_load.p_type = PT_LOAD; // pt_note to pt_load en changeant type
+    data->pt_load.p_flags = PF_X | PF_W | PF_R; // pt_note to pt_load en changeant type
+    data->pt_load.p_offset = data->file_size;
+    data->pt_load.p_vaddr = injection_addr;
+    data->pt_load.p_paddr = injection_addr;
+    data->pt_load.p_filesz = data->payload_size; 
+    data->pt_load.p_memsz = data->payload_size;
+    data->pt_load.p_align = 0x1000;
+    data->new_entrypoint = (void *)data->pt_load.p_vaddr;
 }
 
 void write_file(t_woodyData *data) {
-    int fd = open("output_woody", O_WRONLY | O_CREAT | O_TRUNC | O_APPEND, 0777);
-    if (fd == -1) {
-        perror("Failed to open file");
+    lseek(data->fd, 0, SEEK_SET); // on repart au debut du fichier
+    int fd_out = open("output", O_WRONLY | O_CREAT | O_TRUNC | O_APPEND, 0644);
+    if (fd_out < 3) {
+        perror("could not open file\n");
         exit(1);
     }
-    
-    // write file
-    ssize_t bytes_written = write(fd, data->output_bytes, data->file_size);
-    if (bytes_written == -1 || (size_t)bytes_written != data->file_size) {
-        printf("1st write for file data");
-        printf("bytes written %ld", bytes_written);
-        printf("size needed %ld", data->file_size);
-        perror("Failed to write all bytes");
-        close(fd);
+    char *output = malloc(data->file_size + data->payload_size + 1);
+    if (output == NULL) {
+        perror("output malloc failed\n");
         exit(1);
     }
-    // write payload
-    bytes_written = write(fd, &shellcode_exit, data->length_shellcode);
-    if (bytes_written == -1 || (size_t)bytes_written != data->length_shellcode) {
-        printf("2nd write for shellcode");
-        printf("bytes written %ld", bytes_written);
-        printf("size needed %ld", data->file_size);
-        perror("Failed to write all bytes");
-        close(fd);
+    memset(output, 0, data->file_size + data->payload_size + 1);
+    dprintf(1, "malloced\n");
+    ssize_t bytes_read = read(data->fd, output, data->file_size);
+    if (bytes_read != (ssize_t)data->file_size) {
+        perror("read issue\n");
         exit(1);
     }
-    close(fd);
+    dprintf(1, "red %ld \n", bytes_read);
+
+    memcpy(&output[0x18], &data->new_entrypoint, sizeof(void *));
+    memcpy(&output[data->offset_ptnote], &data->pt_load, sizeof(Elf64_Phdr));
+    memcpy(&code, &output[data->file_size], data->payload_size);
+
+    write(fd_out, output, data->file_size + data->payload_size);
+
+    dprintf(1, "written\n");
 }
 
-int main(int ac, char **av)
-{
-    t_woodyData data;
-    ft_memset(&data, 0, sizeof(t_woodyData)); 
-
-    // defines?
-    data.length_ptload = 256;
-    data.length_shellcode = sizeof(shellcode_exit);
-    printf("data.length_shellcode = %ld\n", data.length_shellcode);
-    if (ac != 2) {
-        printf("Usage: ./woody_woodpacker FILE");
-        return 1;
-    }
-    read_file(av[1], &data);
-    store_headers(&data);
-    parse_elf64(&data);
-    // check validity section & segment headers 
-    find_ptnote_section(&data);
-    modify_pt_note_section(&data);
-    prepare_output_file(&data);
-    change_entrypoint(&data);
+void infect_file(const char *filename) {
+    t_woodyData data = read_store_headers(filename); 
+    data.file_size = lseek(data.fd, 0, SEEK_END); // on recup la taille du fichier
+    data.payload_size = sizeof(code);
+    printf("data->payload size = %d\n", data.payload_size);
+    change_pt_note(&data);
     write_file(&data);
-    // test output
-    // compare_elf_header_with_sytem(&data);
-    // compare_prgm_headers_with_system();
-    return 0;
+}
+
+int main(int argc, char *argv[])
+{
+    if (argc != 2) {
+        printf("Wrong number of args\n");
+        return EXIT_FAILURE;
+    }
+    infect_file(argv[1]);
+
+    return EXIT_SUCCESS;
 }
