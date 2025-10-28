@@ -25,4 +25,4 @@ typedef struct s_woodyData {
 extern char* syscall_random(void *buf, int size);
 void print_hex(const char* buffer, size_t n);
 
-#define KEY_SIZE 64
+#define KEY_SIZE 128
