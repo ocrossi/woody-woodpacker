@@ -1,0 +1,6 @@
+# Object files
+objects/
+*.o
+
+# Binary
+woody_woodpacker
