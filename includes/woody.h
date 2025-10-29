@@ -11,6 +11,7 @@ typedef struct s_woodyData {
 
     void *new_entrypoint;
 
+    char* output_bytes; 
     int payload_size;
     uint64_t injection_addr;
 
@@ -25,4 +26,4 @@ typedef struct s_woodyData {
 extern char* syscall_random(void *buf, int size);
 void print_hex(const char* buffer, size_t n);
 
-#define KEY_SIZE 128
+#define KEY_SIZE 8

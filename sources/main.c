@@ -129,14 +129,14 @@ void write_shellcode(t_woodyData *data, char *output) {
     memcpy(&output[data->file_size], shellcode_with_ret, data->payload_size);
 }
 
-char* write_output_data(t_woodyData *data) {
+void write_output_data(t_woodyData *data) {
     lseek(data->fd, 0, SEEK_SET); // on repart au debut du fichier
     int fd_out = open("output", O_WRONLY | O_CREAT | O_TRUNC | O_APPEND, 0644);
     if (fd_out < 3) {
         perror("could not open file\n");
         exit(1);
     }
-    char *output = malloc(data->file_size + data->payload_size + 1);
+    char *output = malloc(data->file_size + data->payload_size + KEY_SIZE);
     if (output == NULL) {
         perror("output malloc failed\n");
         exit(1);
@@ -154,20 +154,20 @@ char* write_output_data(t_woodyData *data) {
     memcpy(&output[data->offset_ptnote], &data->pt_load, sizeof(Elf64_Phdr));
 
     write_shellcode(data, output);
-    
+   
+    data->output_bytes = output;
     // write(fd_out, output, data->file_size + data->payload_size);
     // dprintf(1, "written\n");
-    return output;
+    // return output;
 }
 
-char* infect_output_data(const char *filename) {
-    t_woodyData data = read_store_headers(filename); 
-    data.file_size = lseek(data.fd, 0, SEEK_END); // on recup la taille du fichier
-    data.payload_size = sizeof(code);
-    printf("data->payload size = %d\n", data.payload_size);
-    change_pt_note(&data);
-    char *output_bytes = write_output_data(&data);
-    return output_bytes;
+void infect_output_data(const char *filename, t_woodyData *data) {
+    *data = read_store_headers(filename); 
+    data->file_size = lseek(data->fd, 0, SEEK_END); // on recup la taille du fichier
+    data->payload_size = sizeof(code);
+    printf("data->payload size = %d\n", data->payload_size);
+    change_pt_note(data);
+    write_output_data(data);
 }
 
 void print_ascii_key(const char *str) {
@@ -188,30 +188,26 @@ void print_ascii_key(const char *str) {
     }
 }
 
-void encrypt_output_data(char *output_bytes) {
-    (void)output_bytes;
+void generate_store_key(t_woodyData *data) {
     char str[KEY_SIZE];
     memset(str, 0, KEY_SIZE);
     syscall_random(str, KEY_SIZE);
     // print_hex(str, KEY_SIZE);
-    
     print_ascii_key(str);
-
     
-    // key to base64 for printable output
+    memcpy(&data->output_bytes[data->file_size + data->payload_size], str, KEY_SIZE);
     // encrpyt section text 
 }
 
 int main(int argc, char *argv[])
 {
-    char *output_bytes;
+    t_woodyData data;
     if (argc != 2) {
         printf("Wrong number of args\n");
         return EXIT_FAILURE;
     }
-    output_bytes = infect_output_data(argv[1]);
-    
-    encrypt_output_data(output_bytes);
+    infect_output_data(argv[1], &data);
+    generate_store_key(&data);
     // write_output_file
 
     return EXIT_SUCCESS;

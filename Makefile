@@ -27,19 +27,19 @@ all: $(TARGET)
 
 # Create objects directory if it doesn't exist
 
-
-$(shell mkdir -p $(OBJ_DIR))
+$(OBJ_DIR):
+	$(shell mkdir -p $(OBJ_DIR))
 
 # Link object files into executable
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) $^ -o $@
 
 # Compile .c files to .o
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c | $(OBJ_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Compile .s files to .o
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.s
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.s | $(OBJ_DIR)
 	$(AS) $(ASFLAGS) $< -o $@
 
 clean:
