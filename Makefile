@@ -23,24 +23,24 @@ OBJS     = $(OBJ_S) $(OBJ_C)
 TARGET   = $(BIN_DIR)/$(BIN_NAME)
 
 # Default target
-all: $(TARGET) $(OBJ_DIR)
+all: $(TARGET)
 
 # Create objects directory if it doesn't exist
+
+
+$(shell mkdir -p $(OBJ_DIR))
 
 # Link object files into executable
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) $^ -o $@
 
-# Compile .s files to .o
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.s
-	$(AS) $(ASFLAGS) $< -o $@
-
 # Compile .c files to .o
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(OBJ_DIR):
-	shell mkdir -p $(OBJ_DIR)
+# Compile .s files to .o
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.s
+	$(AS) $(ASFLAGS) $< -o $@
 
 clean:
 	rm -rf $(OBJ_DIR)
