@@ -148,7 +148,8 @@ void write_shellcode(t_woodyData *data, char *output) {
     // Calculate encrypted text parameters
     // For now, we don't encrypt anything, so we can use dummy values
     // The decrypt function will immediately exit with length = 0
-    size_t text_start = 0; // Dummy value since len = 0
+    // Use injection_addr as dummy text_start to avoid null pointer
+    size_t text_start = data->injection_addr;
     size_t text_len = 0; // No encryption for now, so length is 0
     
     // Copy code to shellcode buffer
@@ -259,8 +260,11 @@ int main(int argc, char *argv[])
     
     // Write output file
     write(data.fd_out, data.output_bytes, data.file_size + data.payload_size + KEY_SIZE);
+    dprintf(1, "Output written\n");
     close(data.fd_out);
+    dprintf(1, "fd_out closed\n");
     close(data.fd);
+    dprintf(1, "fd closed\n");
 
     return EXIT_SUCCESS;
 }
