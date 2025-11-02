@@ -1,4 +1,5 @@
 #include "../includes/woody.h"
+#include <elf.h>
 #include <unistd.h>
 
 unsigned char code[] = {
@@ -131,8 +132,8 @@ void write_shellcode(t_woodyData *data, char *output) {
 
 void write_output_data(t_woodyData *data) {
     lseek(data->fd, 0, SEEK_SET); // on repart au debut du fichier
-    int fd_out = open("output", O_WRONLY | O_CREAT | O_TRUNC | O_APPEND, 0644);
-    if (fd_out < 3) {
+    data->fd_out = open("output", O_WRONLY | O_CREAT | O_TRUNC | O_APPEND, 0644);
+    if (data->fd_out < 3) {
         perror("could not open file\n");
         exit(1);
     }
@@ -189,13 +190,9 @@ void print_ascii_key(const char *str) {
 }
 
 void generate_store_key(t_woodyData *data) {
-    char str[KEY_SIZE];
-    memset(str, 0, KEY_SIZE);
-    syscall_random(str, KEY_SIZE);
-    // print_hex(str, KEY_SIZE);
-    print_ascii_key(str);
-    
-    memcpy(&data->output_bytes[data->file_size + data->payload_size], str, KEY_SIZE);
+    syscall_random(data->key, KEY_SIZE);
+    print_ascii_key(data->key);
+    memcpy(&data->output_bytes[data->file_size + data->payload_size], data->key, KEY_SIZE);
     // encrpyt section text 
 }
 
@@ -208,6 +205,10 @@ int main(int argc, char *argv[])
     }
     infect_output_data(argv[1], &data);
     generate_store_key(&data);
+   
+    size_t start = sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) * data.elf_hdr.e_phnum;
+    size_t len = data.file_size - data.file_size; 
+    encrypt(&data.output_bytes[start], data.key, len);
     // write_output_file
 
     return EXIT_SUCCESS;
