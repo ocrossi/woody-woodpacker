@@ -4,6 +4,7 @@
 #include <string.h>
 #include <elf.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 
 #define KEY_SIZE 8
 
@@ -25,6 +26,11 @@ typedef struct s_woodyData {
     Elf64_Phdr pt_load; // transforme pour infection
     Elf64_Ehdr elf_hdr;
     Elf64_Phdr *prgm_hdrs;
+    
+    uint64_t text_segment_offset;
+    uint64_t text_segment_size;
+    uint64_t text_segment_vaddr;
+    size_t text_segment_phdr_offset;
 } t_woodyData;
 
 extern char* syscall_random(void *buf, int size);
