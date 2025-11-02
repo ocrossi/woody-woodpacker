@@ -4,49 +4,43 @@
 
 unsigned char code[] = {
     // Save all callee-saved registers
-    0x50,                               // push rax
-    0x51,                               // push rcx
-    0x52,                               // push rdx
-    0x53,                               // push rbx
-    0x56,                               // push rsi
-    0x57,                               // push rdi
-    0x55,                               // push rbp
-    0x41, 0x50,                         // push r8
-    0x41, 0x51,                         // push r9
-    0x41, 0x52,                         // push r10
-    0x41, 0x53,                         // push r11
+    0x50, 0x51, 0x52, 0x53, 0x56, 0x57, 0x55, 0x41, 0x50, 0x41, 0x51, 0x41,
+    0x52, 0x41, 0x53,
+    // mprotect(text_addr_aligned, text_len_aligned, PROT_READ|PROT_WRITE|PROT_EXEC)
+    0xb8, 0x0a, 0x00, 0x00, 0x00,       // mov eax, 10 (sys_mprotect)
+    0x48, 0xbf, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rdi, text_addr_aligned (bytes 20-27)
+    0x48, 0xbe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rsi, text_len_aligned (bytes 30-37)
+    0xba, 0x07, 0x00, 0x00, 0x00,       // mov edx, 7 (PROT_READ|PROT_WRITE|PROT_EXEC)
+    0x0f, 0x05,                         // syscall
+    // Setup decrypt arguments (will be patched)
+    0x48, 0xbf, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rdi, key_addr (bytes 49-56)
+    0x48, 0xbe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rsi, text_vaddr (bytes 59-66)
+    0x48, 0xba, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rdx, text_len (bytes 69-76)
+    // Call decrypt inline
+    0xe8, 0x4a, 0x00, 0x00, 0x00,       // call decrypt_func
     // write(1, message, message_len)
     0xb8, 0x01, 0x00, 0x00, 0x00,       // mov eax, 1 (sys_write)
     0xbf, 0x01, 0x00, 0x00, 0x00,       // mov edi, 1 (stdout)
-    0x48, 0x8d, 0x35, 0x39, 0x00, 0x00, 0x00,  // lea rsi, [rip+0x39]  (message)
-    0xba, 0xf, 0x00, 0x00, 0x00,       // mov edx, 15 (message length)
+    0x48, 0x8d, 0x35, 0x62, 0x00, 0x00, 0x00,  // lea rsi, [rel message]
+    0xba, 0x0d, 0x00, 0x00, 0x00,       // mov edx, 13 (message length)
     0x0f, 0x05,                         // syscall
     // Restore all registers
-    0x41, 0x5b,                         // pop r11
-    0x41, 0x5a,                         // pop r10
-    0x41, 0x59,                         // pop r9
-    0x41, 0x58,                         // pop r8
-    0x5d,                               // pop rbp
-    0x5f,                               // pop rdi
-    0x5e,                               // pop rsi
-    0x5b,                               // pop rbx
-    0x5a,                               // pop rdx
-    0x59,                               // pop rcx
-    0x58,                               // pop rax
-    // For PIE: Calculate base address and add original entry offset
-    // Get current RIP into rax
-    0x48, 0x8d, 0x05, 0x00, 0x00, 0x00, 0x00,  // lea rax, [rip]  (current address)
-    // Load injection_vaddr into rbx (will be patched)
-    0x48, 0xbb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rbx, injection_vaddr (10 bytes)
-    // Calculate base: base = current_rip - injection_vaddr
+    0x41, 0x5b, 0x41, 0x5a, 0x41, 0x59, 0x41, 0x58, 0x5d, 0x5f,
+    0x5e, 0x5b, 0x5a, 0x59, 0x58,
+    // Calculate base address and jump to original entry
+    0x48, 0x8d, 0x05, 0x80, 0xff, 0xff, 0xff,  // lea rax, [rel shellcode_start]
+    0x48, 0xbb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rbx, injection_vaddr (bytes 131-138)
     0x48, 0x29, 0xd8,                   // sub rax, rbx
-    // Load original entry offset into rbx (will be patched)
-    0x48, 0xbb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rbx, original_entry (10 bytes)
-    // Calculate actual entry: actual_entry = base + original_entry
+    0x48, 0xbb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rbx, original_entry (bytes 144-151)
     0x48, 0x01, 0xd8,                   // add rax, rbx
-    // Jump to the calculated address
     0xff, 0xe0,                         // jmp rax
-    '.','.','.','.','W', 'O', 'O', 'D', 'Y','.','.','.','.', '\n', 0x00
+    // Inline decrypt function
+    0x49, 0x89, 0xfb, 0x8a, 0x0f, 0x8a, 0x06, 0x8a,
+    0x1f, 0x48, 0xff, 0xca, 0x48, 0x83, 0xfa, 0x00, 0x74, 0x16, 0x80, 0xfb,
+    0x00, 0x74, 0x0c, 0x30, 0xd8, 0x88, 0x06, 0x48, 0xff, 0xc6, 0x48, 0xff,
+    0xc7, 0xeb, 0xe2, 0x4c, 0x89, 0xdf, 0xeb, 0xdd, 0xc3,
+    // Message
+    '.', '.', '.', '.', 'W', 'O', 'O', 'D', 'Y', '.', '.', '.', 0x0a, 0x00
 };
 
 
@@ -66,6 +60,10 @@ void read_store_elf_header(const char *filename, t_woodyData *data) {
 
 Elf64_Phdr read_phdrs_store_ptnote(t_woodyData *data) {
     ssize_t bytes_read = 0;
+    Elf64_Phdr pt_note_found;
+    int found_note = 0;
+    int found_exec = 0;
+    
     for (int i = 0; i < data->elf_hdr.e_phnum; i++) {
         Elf64_Phdr current;
         int offset = data->elf_hdr.e_phoff + i * data->elf_hdr.e_phentsize;
@@ -79,11 +77,29 @@ Elf64_Phdr read_phdrs_store_ptnote(t_woodyData *data) {
         if (current.p_type == PT_NOTE) {
             data->offset_ptnote = offset; 
             printf("pt_note found\n");
-            return current;
+            memcpy(&pt_note_found, &current, sizeof(Elf64_Phdr));
+            found_note = 1;
+        }
+        // Find executable PT_LOAD segment for encryption
+        if (current.p_type == PT_LOAD && (current.p_flags & PF_X)) {
+            data->text_segment_offset = current.p_offset;
+            data->text_segment_size = current.p_filesz;
+            data->text_segment_vaddr = current.p_vaddr;
+            data->text_segment_phdr_offset = offset;  // Save offset to patch flags later
+            printf("Executable PT_LOAD found at offset 0x%lx, size 0x%lx, vaddr 0x%lx\n", 
+                   data->text_segment_offset, data->text_segment_size, data->text_segment_vaddr);
+            found_exec = 1;
         }
     }
-    printf("Fatal, didnt find any PT_Note program header");
-    exit(1);
+    if (!found_note) {
+        printf("Fatal, didnt find any PT_Note program header\n");
+        exit(1);
+    }
+    if (!found_exec) {
+        printf("Fatal, didnt find executable PT_LOAD segment\n");
+        exit(1);
+    }
+    return pt_note_found;
 }
 
 t_woodyData read_store_headers(const char *filename) {
@@ -114,20 +130,49 @@ void change_pt_note(t_woodyData *data) {
 }
 
 void write_shellcode(t_woodyData *data, char *output) {
-    unsigned char *shellcode_with_ret = malloc(sizeof(data->payload_size));
+    unsigned char *shellcode_with_ret = malloc(data->payload_size);
 
     if (shellcode_with_ret == NULL) {
         perror("Malloc failed for shellcode allocation");
-        free(shellcode_with_ret);
         exit(1);
     }
     
-    uint64_t offset_placeholder = data->injection_addr + 61; //pos 1er placeholder
-    
+    // Copy the shellcode template
     memcpy(shellcode_with_ret, code, data->payload_size);
-    memcpy(shellcode_with_ret + 63, &offset_placeholder, sizeof(uint64_t));
-    memcpy(shellcode_with_ret + 76, &data->elf_hdr.e_entry, sizeof(uint64_t));
+    
+    // Calculate addresses for mprotect and decrypt (use virtual addresses)
+    uint64_t key_addr = data->injection_addr + data->payload_size;  // Key is after shellcode (vaddr)
+    uint64_t text_vaddr = data->text_segment_vaddr;  // Virtual address of text segment
+    uint64_t text_len = data->text_segment_size;
+    
+    // Page-align text segment address and length for mprotect
+    uint64_t page_size = 0x1000;  // 4KB
+    uint64_t text_addr_aligned = text_vaddr & ~(page_size - 1);  // Round down to page boundary
+    uint64_t text_end = text_vaddr + text_len;
+    uint64_t text_end_aligned = (text_end + page_size - 1) & ~(page_size - 1);  // Round up to page boundary
+    uint64_t text_len_aligned = text_end_aligned - text_addr_aligned;
+    
+    printf("Patching shellcode: key_addr=0x%lx, text_vaddr=0x%lx, text_len=0x%lx\n",
+           key_addr, text_vaddr, text_len);
+    printf("  mprotect: addr=0x%lx, len=0x%lx\n", text_addr_aligned, text_len_aligned);
+    
+    // Patch mprotect arguments (skip 2-byte opcode, patch 8-byte immediate)
+    memcpy(shellcode_with_ret + 22, &text_addr_aligned, sizeof(uint64_t));
+    memcpy(shellcode_with_ret + 32, &text_len_aligned, sizeof(uint64_t));
+    
+    // Patch decrypt arguments (skip 2-byte opcode, patch 8-byte immediate)
+    memcpy(shellcode_with_ret + 49, &key_addr, sizeof(uint64_t));
+    memcpy(shellcode_with_ret + 59, &text_vaddr, sizeof(uint64_t));
+    memcpy(shellcode_with_ret + 69, &text_len, sizeof(uint64_t));
+    
+    // Patch injection_vaddr and original_entry (skip 2-byte opcode, patch 8-byte immediate)
+    memcpy(shellcode_with_ret + 130, &data->injection_addr, sizeof(uint64_t));
+    memcpy(shellcode_with_ret + 143, &data->elf_hdr.e_entry, sizeof(uint64_t));
+    
+    // Write shellcode to output
     memcpy(&output[data->file_size], shellcode_with_ret, data->payload_size);
+    
+    free(shellcode_with_ret);
 }
 
 void write_output_data(t_woodyData *data) {
@@ -137,12 +182,12 @@ void write_output_data(t_woodyData *data) {
         perror("could not open file\n");
         exit(1);
     }
-    char *output = malloc(data->file_size + data->payload_size + KEY_SIZE);
+    char *output = malloc(data->file_size + data->payload_size + KEY_SIZE + 1);  // +1 for null terminator
     if (output == NULL) {
         perror("output malloc failed\n");
         exit(1);
     }
-    memset(output, 0, data->file_size + data->payload_size + 1);
+    memset(output, 0, data->file_size + data->payload_size + KEY_SIZE + 1);
     dprintf(1, "malloced\n");
     ssize_t bytes_read = read(data->fd, output, data->file_size);
     if (bytes_read != (ssize_t)data->file_size) {
@@ -153,6 +198,13 @@ void write_output_data(t_woodyData *data) {
 
     memcpy(&output[0x18], &data->new_entrypoint, sizeof(void *));
     memcpy(&output[data->offset_ptnote], &data->pt_load, sizeof(Elf64_Phdr));
+    
+    // Make text segment writable for decryption
+    Elf64_Phdr text_phdr;
+    memcpy(&text_phdr, &output[data->text_segment_phdr_offset], sizeof(Elf64_Phdr));
+    text_phdr.p_flags |= PF_W;  // Add write permission
+    memcpy(&output[data->text_segment_phdr_offset], &text_phdr, sizeof(Elf64_Phdr));
+    printf("Made text segment writable (flags: 0x%x)\n", text_phdr.p_flags);
 
     write_shellcode(data, output);
    
@@ -206,10 +258,20 @@ int main(int argc, char *argv[])
     infect_output_data(argv[1], &data);
     generate_store_key(&data);
    
-    size_t start = sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) * data.elf_hdr.e_phnum;
-    size_t len = data.file_size - data.file_size; 
-    encrypt(&data.output_bytes[start], data.key, len);
-    // write_output_file
+    // Encrypt the executable PT_LOAD segment
+    encrypt(data.key, &data.output_bytes[data.text_segment_offset], data.text_segment_size);
+    printf("Encrypted segment at offset 0x%lx, size 0x%lx\n", 
+           data.text_segment_offset, data.text_segment_size);
+    
+    // Write output file (include null terminator after key)
+    write(data.fd_out, data.output_bytes, data.file_size + data.payload_size + KEY_SIZE + 1);
+    dprintf(1, "written to output\n");
+    
+    // Make output executable
+    fchmod(data.fd_out, 0755);
+    
+    close(data.fd);
+    close(data.fd_out);
 
     return EXIT_SUCCESS;
 }
