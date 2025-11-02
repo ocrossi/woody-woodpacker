@@ -4,48 +4,71 @@
 
 unsigned char code[] = {
     // Save all callee-saved registers
-    0x50,                               // push rax
-    0x51,                               // push rcx
-    0x52,                               // push rdx
-    0x53,                               // push rbx
-    0x56,                               // push rsi
-    0x57,                               // push rdi
-    0x55,                               // push rbp
-    0x41, 0x50,                         // push r8
-    0x41, 0x51,                         // push r9
-    0x41, 0x52,                         // push r10
-    0x41, 0x53,                         // push r11
+    0x50,                                              // push rax
+    0x51,                                              // push rcx
+    0x52,                                              // push rdx
+    0x53,                                              // push rbx
+    0x56,                                              // push rsi
+    0x57,                                              // push rdi
+    0x55,                                              // push rbp
+    0x41, 0x50,                                        // push r8
+    0x41, 0x51,                                        // push r9
+    0x41, 0x52,                                        // push r10
+    0x41, 0x53,                                        // push r11
+    // Calculate base address for PIE
+    0x4c, 0x8d, 0x25, 0xea, 0xff, 0xff, 0xff,          // lea r12, [rip-0x16] (start address)
+    0x49, 0xbd, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11,  // movabs r13, injection_vaddr (will be patched at offset 23)
+    0x4d, 0x29, 0xec,                                  // sub r12, r13 (r12 = base_address)
+    // Set up parameters for decrypt
+    0x48, 0x8d, 0x3d, 0x9a, 0x00, 0x00, 0x00,          // lea rdi, [rip+0x9a] (key location)
+    0x48, 0xbe, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22,  // movabs rsi, text_start_offset (will be patched at offset 43)
+    0x4c, 0x01, 0xe6,                                  // add rsi, r12 (make absolute)
+    0x48, 0xba, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33,  // movabs rdx, text_len (will be patched at offset 56)
+    // Decrypt inline with proper length check
+    0x49, 0x89, 0xfb,                                  // mov r11, rdi (save key base)
+    0x48, 0x83, 0xfa, 0x00,                            // cmp rdx, 0 (check length FIRST)
+    0x74, 0x21,                                        // je decrypt_done (skip if length is 0)
+    // decrypt_loop:
+    0x8a, 0x06,                                        // mov al, [rsi]
+    0x8a, 0x1f,                                        // mov bl, [rdi]
+    0x30, 0xd8,                                        // xor al, bl
+    0x88, 0x06,                                        // mov [rsi], al
+    0x48, 0xff, 0xc6,                                  // inc rsi
+    0x48, 0xff, 0xc7,                                  // inc rdi
+    0x48, 0xff, 0xca,                                  // dec rdx
+    0x48, 0x83, 0xfa, 0x00,                            // cmp rdx, 0
+    0x74, 0x0a,                                        // je decrypt_done
+    0x80, 0xfb, 0x00,                                  // cmp bl, 0 (check if end of key)
+    0x75, 0xe4,                                        // jne decrypt_loop
+    // decrypt_reset_key:
+    0x4c, 0x89, 0xdf,                                  // mov rdi, r11
+    0xeb, 0xdf,                                        // jmp decrypt_loop
+    // decrypt_done:
     // write(1, message, message_len)
-    0xb8, 0x01, 0x00, 0x00, 0x00,       // mov eax, 1 (sys_write)
-    0xbf, 0x01, 0x00, 0x00, 0x00,       // mov edi, 1 (stdout)
-    0x48, 0x8d, 0x35, 0x39, 0x00, 0x00, 0x00,  // lea rsi, [rip+0x39]  (message)
-    0xba, 0xf, 0x00, 0x00, 0x00,       // mov edx, 15 (message length)
-    0x0f, 0x05,                         // syscall
+    0xb8, 0x01, 0x00, 0x00, 0x00,                      // mov eax, 1 (sys_write)
+    0xbf, 0x01, 0x00, 0x00, 0x00,                      // mov edi, 1 (stdout)
+    0x48, 0x8d, 0x35, 0x39, 0x00, 0x00, 0x00,          // lea rsi, [rip+0x39] (message)
+    0xba, 0x0f, 0x00, 0x00, 0x00,                      // mov edx, 15 (message length)
+    0x0f, 0x05,                                        // syscall
     // Restore all registers
-    0x41, 0x5b,                         // pop r11
-    0x41, 0x5a,                         // pop r10
-    0x41, 0x59,                         // pop r9
-    0x41, 0x58,                         // pop r8
-    0x5d,                               // pop rbp
-    0x5f,                               // pop rdi
-    0x5e,                               // pop rsi
-    0x5b,                               // pop rbx
-    0x5a,                               // pop rdx
-    0x59,                               // pop rcx
-    0x58,                               // pop rax
+    0x41, 0x5b,                                        // pop r11
+    0x41, 0x5a,                                        // pop r10
+    0x41, 0x59,                                        // pop r9
+    0x41, 0x58,                                        // pop r8
+    0x5d,                                              // pop rbp
+    0x5f,                                              // pop rdi
+    0x5e,                                              // pop rsi
+    0x5b,                                              // pop rbx
+    0x5a,                                              // pop rdx
+    0x59,                                              // pop rcx
+    0x58,                                              // pop rax
     // For PIE: Calculate base address and add original entry offset
-    // Get current RIP into rax
-    0x48, 0x8d, 0x05, 0x00, 0x00, 0x00, 0x00,  // lea rax, [rip]  (current address)
-    // Load injection_vaddr into rbx (will be patched)
-    0x48, 0xbb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rbx, injection_vaddr (10 bytes)
-    // Calculate base: base = current_rip - injection_vaddr
-    0x48, 0x29, 0xd8,                   // sub rax, rbx
-    // Load original entry offset into rbx (will be patched)
-    0x48, 0xbb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rbx, original_entry (10 bytes)
-    // Calculate actual entry: actual_entry = base + original_entry
-    0x48, 0x01, 0xd8,                   // add rax, rbx
-    // Jump to the calculated address
-    0xff, 0xe0,                         // jmp rax
+    0x48, 0x8d, 0x05, 0x67, 0xff, 0xff, 0xff,          // lea rax, [rip-0x99] (start address)
+    0x48, 0xbb, 0x44, 0x44, 0x44, 0x44, 0x44, 0x44, 0x44, 0x44,  // movabs rbx, injection_vaddr (will be patched at offset 154)
+    0x48, 0x29, 0xd8,                                  // sub rax, rbx (calculate base)
+    0x48, 0xbb, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55,  // movabs rbx, original_entry (will be patched at offset 167)
+    0x48, 0x01, 0xd8,                                  // add rax, rbx (calculate actual entry)
+    0xff, 0xe0,                                        // jmp rax
     '.','.','.','.','W', 'O', 'O', 'D', 'Y','.','.','.','.', '\n', 0x00
 };
 
@@ -107,14 +130,14 @@ void change_pt_note(t_woodyData *data) {
     data->pt_load.p_offset = data->file_size;
     data->pt_load.p_vaddr = data->injection_addr;
     // data->pt_load.p_paddr = injection_addr;
-    data->pt_load.p_filesz = data->payload_size; 
-    data->pt_load.p_memsz = data->payload_size;
+    data->pt_load.p_filesz = data->payload_size + KEY_SIZE; 
+    data->pt_load.p_memsz = data->payload_size + KEY_SIZE;
     // data->pt_load.p_align = 0x1000;
     data->new_entrypoint = (void *)data->pt_load.p_vaddr;
 }
 
 void write_shellcode(t_woodyData *data, char *output) {
-    unsigned char *shellcode_with_ret = malloc(sizeof(data->payload_size));
+    unsigned char *shellcode_with_ret = malloc(data->payload_size);
 
     if (shellcode_with_ret == NULL) {
         perror("Malloc failed for shellcode allocation");
@@ -122,12 +145,34 @@ void write_shellcode(t_woodyData *data, char *output) {
         exit(1);
     }
     
-    uint64_t offset_placeholder = data->injection_addr + 61; //pos 1er placeholder
+    // Calculate encrypted text parameters
+    // For now, we don't encrypt anything, so we can use dummy values
+    // The decrypt function will immediately exit with length = 0
+    size_t text_start = 0; // Dummy value since len = 0
+    size_t text_len = 0; // No encryption for now, so length is 0
     
+    // Copy code to shellcode buffer
     memcpy(shellcode_with_ret, code, data->payload_size);
-    memcpy(shellcode_with_ret + 63, &offset_placeholder, sizeof(uint64_t));
-    memcpy(shellcode_with_ret + 76, &data->elf_hdr.e_entry, sizeof(uint64_t));
+    
+    // Patch placeholder 1: injection_vaddr at offset 23
+    memcpy(shellcode_with_ret + 23, &data->injection_addr, sizeof(uint64_t));
+    
+    // Patch placeholder 2: text_start_offset at offset 43
+    memcpy(shellcode_with_ret + 43, &text_start, sizeof(uint64_t));
+    
+    // Patch placeholder 3: text_len at offset 56
+    memcpy(shellcode_with_ret + 56, &text_len, sizeof(uint64_t));
+    
+    // Patch placeholder 4: injection_vaddr at offset 154
+    memcpy(shellcode_with_ret + 154, &data->injection_addr, sizeof(uint64_t));
+    
+    // Patch placeholder 5: original_entry at offset 167
+    memcpy(shellcode_with_ret + 167, &data->elf_hdr.e_entry, sizeof(uint64_t));
+    
+    // Copy patched shellcode to output
     memcpy(&output[data->file_size], shellcode_with_ret, data->payload_size);
+    
+    free(shellcode_with_ret);
 }
 
 void write_output_data(t_woodyData *data) {
@@ -192,8 +237,8 @@ void print_ascii_key(const char *str) {
 void generate_store_key(t_woodyData *data) {
     syscall_random(data->key, KEY_SIZE);
     print_ascii_key(data->key);
+    printf("\n");
     memcpy(&data->output_bytes[data->file_size + data->payload_size], data->key, KEY_SIZE);
-    // encrpyt section text 
 }
 
 int main(int argc, char *argv[])
@@ -207,9 +252,15 @@ int main(int argc, char *argv[])
     generate_store_key(&data);
    
     size_t start = sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) * data.elf_hdr.e_phnum;
-    size_t len = data.file_size - data.file_size; 
-    encrypt(&data.output_bytes[start], data.key, len);
-    // write_output_file
+    size_t len = 0; // No encryption for now - decrypt will handle length 0
+    if (len > 0) {
+        encrypt(data.key, &data.output_bytes[start], len);
+    }
+    
+    // Write output file
+    write(data.fd_out, data.output_bytes, data.file_size + data.payload_size + KEY_SIZE);
+    close(data.fd_out);
+    close(data.fd);
 
     return EXIT_SUCCESS;
 }
