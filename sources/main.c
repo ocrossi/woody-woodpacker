@@ -237,6 +237,7 @@ void print_ascii_key(const char *str) {
 
 void generate_store_key(t_woodyData *data) {
     syscall_random(data->key, KEY_SIZE);
+    printf("Key: ");
     print_ascii_key(data->key);
     printf("\n");
     memcpy(&data->output_bytes[data->file_size + data->payload_size], data->key, KEY_SIZE);
@@ -260,11 +261,8 @@ int main(int argc, char *argv[])
     
     // Write output file
     write(data.fd_out, data.output_bytes, data.file_size + data.payload_size + KEY_SIZE);
-    dprintf(1, "Output written\n");
     close(data.fd_out);
-    dprintf(1, "fd_out closed\n");
     close(data.fd);
-    dprintf(1, "fd closed\n");
 
     return EXIT_SUCCESS;
 }
