@@ -6,10 +6,16 @@ unsigned char code[] = {
     // Save all callee-saved registers
     0x50, 0x51, 0x52, 0x53, 0x56, 0x57, 0x55, 0x41, 0x50, 0x41, 0x51, 0x41,
     0x52, 0x41, 0x53,
+    // mprotect(text_addr_aligned, text_len_aligned, PROT_READ|PROT_WRITE|PROT_EXEC)
+    0xb8, 0x0a, 0x00, 0x00, 0x00,       // mov eax, 10 (sys_mprotect)
+    0x48, 0xbf, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rdi, text_addr_aligned (bytes 20-27)
+    0x48, 0xbe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rsi, text_len_aligned (bytes 30-37)
+    0xba, 0x07, 0x00, 0x00, 0x00,       // mov edx, 7 (PROT_READ|PROT_WRITE|PROT_EXEC)
+    0x0f, 0x05,                         // syscall
     // Setup decrypt arguments (will be patched)
-    0x48, 0xbf, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rdi, key_addr (bytes 17-24)
-    0x48, 0xbe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rsi, text_addr (bytes 27-34)
-    0x48, 0xba, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rdx, text_len (bytes 37-44)
+    0x48, 0xbf, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rdi, key_addr (bytes 49-56)
+    0x48, 0xbe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rsi, text_vaddr (bytes 59-66)
+    0x48, 0xba, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rdx, text_len (bytes 69-76)
     // Call decrypt inline
     0xe8, 0x4a, 0x00, 0x00, 0x00,       // call decrypt_func
     // write(1, message, message_len)
@@ -22,10 +28,10 @@ unsigned char code[] = {
     0x41, 0x5b, 0x41, 0x5a, 0x41, 0x59, 0x41, 0x58, 0x5d, 0x5f,
     0x5e, 0x5b, 0x5a, 0x59, 0x58,
     // Calculate base address and jump to original entry
-    0x48, 0x8d, 0x05, 0xa0, 0xff, 0xff, 0xff,  // lea rax, [rel shellcode_start]
-    0x48, 0xbb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rbx, injection_vaddr (bytes 99-106)
+    0x48, 0x8d, 0x05, 0x80, 0xff, 0xff, 0xff,  // lea rax, [rel shellcode_start]
+    0x48, 0xbb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rbx, injection_vaddr (bytes 131-138)
     0x48, 0x29, 0xd8,                   // sub rax, rbx
-    0x48, 0xbb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rbx, original_entry (bytes 112-119)
+    0x48, 0xbb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // movabs rbx, original_entry (bytes 144-151)
     0x48, 0x01, 0xd8,                   // add rax, rbx
     0xff, 0xe0,                         // jmp rax
     // Inline decrypt function
@@ -134,22 +140,34 @@ void write_shellcode(t_woodyData *data, char *output) {
     // Copy the shellcode template
     memcpy(shellcode_with_ret, code, data->payload_size);
     
-    // Calculate addresses for decrypt call (use virtual addresses)
+    // Calculate addresses for mprotect and decrypt (use virtual addresses)
     uint64_t key_addr = data->injection_addr + data->payload_size;  // Key is after shellcode (vaddr)
     uint64_t text_vaddr = data->text_segment_vaddr;  // Virtual address of text segment
     uint64_t text_len = data->text_segment_size;
     
+    // Page-align text segment address and length for mprotect
+    uint64_t page_size = 0x1000;  // 4KB
+    uint64_t text_addr_aligned = text_vaddr & ~(page_size - 1);  // Round down to page boundary
+    uint64_t text_end = text_vaddr + text_len;
+    uint64_t text_end_aligned = (text_end + page_size - 1) & ~(page_size - 1);  // Round up to page boundary
+    uint64_t text_len_aligned = text_end_aligned - text_addr_aligned;
+    
     printf("Patching shellcode: key_addr=0x%lx, text_vaddr=0x%lx, text_len=0x%lx\n",
            key_addr, text_vaddr, text_len);
+    printf("  mprotect: addr=0x%lx, len=0x%lx\n", text_addr_aligned, text_len_aligned);
     
-    // Patch decrypt arguments at bytes 17, 27, 37
-    memcpy(shellcode_with_ret + 17, &key_addr, sizeof(uint64_t));
-    memcpy(shellcode_with_ret + 27, &text_vaddr, sizeof(uint64_t));
-    memcpy(shellcode_with_ret + 37, &text_len, sizeof(uint64_t));
+    // Patch mprotect arguments (skip 2-byte opcode, patch 8-byte immediate)
+    memcpy(shellcode_with_ret + 22, &text_addr_aligned, sizeof(uint64_t));
+    memcpy(shellcode_with_ret + 32, &text_len_aligned, sizeof(uint64_t));
     
-    // Patch injection_vaddr and original_entry at bytes 99 and 112
-    memcpy(shellcode_with_ret + 99, &data->injection_addr, sizeof(uint64_t));
-    memcpy(shellcode_with_ret + 112, &data->elf_hdr.e_entry, sizeof(uint64_t));
+    // Patch decrypt arguments (skip 2-byte opcode, patch 8-byte immediate)
+    memcpy(shellcode_with_ret + 49, &key_addr, sizeof(uint64_t));
+    memcpy(shellcode_with_ret + 59, &text_vaddr, sizeof(uint64_t));
+    memcpy(shellcode_with_ret + 69, &text_len, sizeof(uint64_t));
+    
+    // Patch injection_vaddr and original_entry (skip 2-byte opcode, patch 8-byte immediate)
+    memcpy(shellcode_with_ret + 130, &data->injection_addr, sizeof(uint64_t));
+    memcpy(shellcode_with_ret + 143, &data->elf_hdr.e_entry, sizeof(uint64_t));
     
     // Write shellcode to output
     memcpy(&output[data->file_size], shellcode_with_ret, data->payload_size);
