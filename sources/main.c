@@ -250,8 +250,18 @@ t_woodyData read_parse_headers(const char *filename) {
     return data;
 }
 
-void infect_output_data(const char *filename, t_woodyData *data) {
-    // create pt_load 
+void create_pt_load(t_woodyData *data) {
+    // malloc new size of file 
+    // add all headers 
+    // add new program header 
+    // change elf_header
+
+    data->elf_hdr.e_phnum++;
+
+}
+
+void infect_output_data(t_woodyData *data) {
+    create_pt_load(data);
 }
 
 int main(int argc, char *argv[])
@@ -262,7 +272,7 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
     data = read_parse_headers(argv[1]); 
-    infect_output_data(argv[1], &data);
+    infect_output_data(&data);
 
     //  objdump -d decrypt.o -M intel -> gets instructions with bytes
     // write_output_file(&data);
