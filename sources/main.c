@@ -272,17 +272,26 @@ void create_pt_load(t_woodyData *data) {
 
     memset(&new_ptload, 0, sizeof(Elf64_Phdr));
 
-    data->new_entrypoint = data->file_size + 0xc000000; 
+    // We'll add a program header (56 bytes), so the shellcode will be at file_size + 56
+    // The virtual address needs to align with the file offset modulo page size
+    size_t shift = sizeof(Elf64_Phdr);
+    size_t shellcode_offset = data->file_size + shift;
+    
+    // Calculate a reasonable virtual address for the new segment
+    // It should be page-aligned and after the existing segments
+    // Use 0x405000 as base (after last segment) + offset within page
+    size_t page_size = 0x1000;
+    size_t offset_in_page = shellcode_offset % page_size;
+    data->new_entrypoint = 0x405000 + offset_in_page; 
 
     new_ptload.p_type = PT_LOAD;
     new_ptload.p_flags = PF_X | PF_R;
     new_ptload.p_offset = data->file_size;
     new_ptload.p_vaddr = data->new_entrypoint;
-
-    // new_ptload.p_memsz = data->payload_size;
-    // new_ptload.p_filesz = data->payload_size;
-    new_ptload.p_memsz = 1024;
+    new_ptload.p_paddr = 0;  // Physical address (not used for userspace)
     new_ptload.p_filesz = 1024;
+    new_ptload.p_memsz = 1024;
+    new_ptload.p_align = 0x1000;  // Page alignment (4KB)
 
     data->pt_load = new_ptload;
 
@@ -306,7 +315,7 @@ char code[] = {
     // write(1, message, message_len)
     0xb8, 0x01, 0x00, 0x00, 0x00,       // mov eax, 1 (sys_write)
     0xbf, 0x01, 0x00, 0x00, 0x00,       // mov edi, 1 (stdout)
-    0x48, 0x8d, 0x35, 0x1e, 0x00, 0x00, 0x00,  // lea rsi, [rip+0x1e]  (message)
+    0x48, 0x8d, 0x35, 0x22, 0x00, 0x00, 0x00,  // lea rsi, [rip+0x22]  (message) - offset 34 bytes
     0xba, 0xf, 0x00, 0x00, 0x00,       // mov edx, 15 (message length)
     0x0f, 0x05,                         // syscall
     // Restore all registers
@@ -321,6 +330,9 @@ char code[] = {
     0x5a,                               // pop rdx
     0x59,                               // pop rcx
     0x58,                               // pop rax
+    // Jump back to original entry point
+    0x48, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // mov rax, <address> (placeholder)
+    0xff, 0xe0,                         // jmp rax
     '.','.','.','.','W', 'O', 'O', 'D', 'Y','.','.','.','.', '\n', 0x00
 };
 
@@ -341,8 +353,28 @@ void write_output_file(t_woodyData *data) {
     // since we're inserting a new program header
     size_t shift = sizeof(Elf64_Phdr);
     for (int i = 0; i < original_phnum; i++) {
+        // Update PHDR segment size to reflect the new program header
+        if (data->prgm_hdrs[i].p_type == PT_PHDR) {
+            data->prgm_hdrs[i].p_filesz += shift;
+            data->prgm_hdrs[i].p_memsz += shift;
+        }
+        
+        // Adjust offsets and virtual addresses that point beyond the program header table
         if (data->prgm_hdrs[i].p_offset >= original_headers_end) {
             data->prgm_hdrs[i].p_offset += shift;
+            // For non-LOAD segments, also adjust the virtual address
+            // LOAD segments define the mapping, so their vaddr stays the same
+            // But segments like INTERP, NOTE, DYNAMIC etc need vaddr adjusted
+            if (data->prgm_hdrs[i].p_type != PT_LOAD) {
+                data->prgm_hdrs[i].p_vaddr += shift;
+                data->prgm_hdrs[i].p_paddr += shift;
+            }
+        }
+        
+        // For LOAD segments that start at offset 0 (containing headers), increase their size
+        if (data->prgm_hdrs[i].p_type == PT_LOAD && data->prgm_hdrs[i].p_offset == 0) {
+            data->prgm_hdrs[i].p_filesz += shift;
+            data->prgm_hdrs[i].p_memsz += shift;
         }
     }
 
@@ -350,6 +382,9 @@ void write_output_file(t_woodyData *data) {
     if (data->elf_hdr.e_shoff >= original_headers_end) {
         data->elf_hdr.e_shoff += shift;
     }
+
+    // Update the new PT_LOAD segment's offset to account for the shift
+    data->pt_load.p_offset = data->file_size + shift;
 
     memcpy(data->output_bytes, &data->elf_hdr, sizeof(Elf64_Ehdr));
     size_t write_offset = sizeof(Elf64_Ehdr); 
@@ -374,7 +409,16 @@ void write_output_file(t_woodyData *data) {
         }
     }
 
-    memcpy(&data->output_bytes[data->file_size], code, sizeof(code));
+    // Copy shellcode to output
+    // The shellcode goes at the end, after all the original file content + the shift from new program header
+    size_t shellcode_offset = data->file_size + shift;
+    memcpy(&data->output_bytes[shellcode_offset], code, sizeof(code));
+    
+    // Inject the original entry point address into the "mov rax, <address>" instruction
+    // The "mov rax, imm64" instruction (0x48 0xb8) is followed by 8 bytes for the address
+    // Calculate offset: pushes(15) + syscall_setup(24) + pops(15) + mov_opcode(2) = 56
+    size_t address_offset = shellcode_offset + 56;  // Position of address operand in "mov rax, imm64"
+    memcpy(&data->output_bytes[address_offset], &data->old_entrypoint, sizeof(uint64_t));
 
     data->fd_out = open("woody", O_CREAT | O_WRONLY | O_TRUNC, 0644);
     if (data->fd_out < 3) {
