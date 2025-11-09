@@ -268,25 +268,40 @@ t_woodyData read_parse_headers(const char *filename) {
 }
 
 void create_pt_load(t_woodyData *data) {
-    Elf64_Phdr new_ptload;
-
-    memset(&new_ptload, 0, sizeof(Elf64_Phdr));
-
-    data->new_entrypoint = data->file_size + 0xc000000; 
-
-    new_ptload.p_type = PT_LOAD;
-    new_ptload.p_flags = PF_X | PF_R;
-    new_ptload.p_offset = data->file_size;
-    new_ptload.p_vaddr = data->new_entrypoint;
-
-    // new_ptload.p_memsz = data->payload_size;
-    // new_ptload.p_filesz = data->payload_size;
-    new_ptload.p_memsz = 1024;
-    new_ptload.p_filesz = 1024;
-
-    data->pt_load = new_ptload;
-
-    data->elf_hdr.e_phnum++;
+    // Instead of adding a new program header, we'll repurpose PT_GNU_STACK
+    // This avoids shifting data and breaking alignment constraints
+    
+    // Find PT_GNU_STACK segment to repurpose
+    int gnu_stack_idx = -1;
+    for (int i = 0; i < data->elf_hdr.e_phnum; i++) {
+        if (data->prgm_hdrs[i].p_type == PT_GNU_STACK) {
+            gnu_stack_idx = i;
+            break;
+        }
+    }
+    
+    if (gnu_stack_idx == -1) {
+        fprintf(stderr, "Error: Could not find PT_GNU_STACK segment to repurpose\n");
+        exit(1);
+    }
+    
+    // Calculate virtual address for shellcode
+    // It should be after existing segments and maintain alignment
+    size_t page_size = 0x1000;
+    size_t offset_in_page = data->file_size % page_size;
+    data->new_entrypoint = 0x405000 + offset_in_page;
+    
+    // Repurpose PT_GNU_STACK as PT_LOAD for our shellcode
+    data->prgm_hdrs[gnu_stack_idx].p_type = PT_LOAD;
+    data->prgm_hdrs[gnu_stack_idx].p_flags = PF_X | PF_R;
+    data->prgm_hdrs[gnu_stack_idx].p_offset = data->file_size;
+    data->prgm_hdrs[gnu_stack_idx].p_vaddr = data->new_entrypoint;
+    data->prgm_hdrs[gnu_stack_idx].p_paddr = 0;
+    data->prgm_hdrs[gnu_stack_idx].p_filesz = 1024;
+    data->prgm_hdrs[gnu_stack_idx].p_memsz = 1024;
+    data->prgm_hdrs[gnu_stack_idx].p_align = 0x1000;
+    
+    // No need to increment e_phnum since we're repurposing an existing header
     data->old_entrypoint = data->elf_hdr.e_entry;
     data->elf_hdr.e_entry = data->new_entrypoint;
 }
@@ -306,7 +321,7 @@ char code[] = {
     // write(1, message, message_len)
     0xb8, 0x01, 0x00, 0x00, 0x00,       // mov eax, 1 (sys_write)
     0xbf, 0x01, 0x00, 0x00, 0x00,       // mov edi, 1 (stdout)
-    0x48, 0x8d, 0x35, 0x1e, 0x00, 0x00, 0x00,  // lea rsi, [rip+0x1e]  (message)
+    0x48, 0x8d, 0x35, 0x22, 0x00, 0x00, 0x00,  // lea rsi, [rip+0x22]  (message) - offset 34 bytes
     0xba, 0xf, 0x00, 0x00, 0x00,       // mov edx, 15 (message length)
     0x0f, 0x05,                         // syscall
     // Restore all registers
@@ -321,11 +336,16 @@ char code[] = {
     0x5a,                               // pop rdx
     0x59,                               // pop rcx
     0x58,                               // pop rax
+    // Jump back to original entry point
+    0x48, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // mov rax, <address> (placeholder)
+    0xff, 0xe0,                         // jmp rax
     '.','.','.','.','W', 'O', 'O', 'D', 'Y','.','.','.','.', '\n', 0x00
 };
 
 void write_output_file(t_woodyData *data) {
-    data->output_size = data->file_size + data->elf_hdr.e_phentsize + data->pt_load.p_filesz;
+    // Simpler approach: don't insert a program header, just append shellcode
+    // We repurposed PT_GNU_STACK, so no shifting needed
+    data->output_size = data->file_size + 1024; // file + shellcode space
 
     data->output_bytes = malloc(data->output_size);
     if (data->output_bytes == NULL) {
@@ -334,47 +354,33 @@ void write_output_file(t_woodyData *data) {
     }
     memset(data->output_bytes, 0, data->output_size);
 
-    int original_phnum = data->elf_hdr.e_phnum - 1;
-    size_t original_headers_end = data->elf_hdr.e_phoff + sizeof(Elf64_Phdr) * original_phnum;
-
-    // Adjust offsets in program headers that point beyond the program header table
-    // since we're inserting a new program header
-    size_t shift = sizeof(Elf64_Phdr);
-    for (int i = 0; i < original_phnum; i++) {
-        if (data->prgm_hdrs[i].p_offset >= original_headers_end) {
-            data->prgm_hdrs[i].p_offset += shift;
-        }
-    }
-
-    // Adjust section header offset if it exists and points beyond program headers
-    if (data->elf_hdr.e_shoff >= original_headers_end) {
-        data->elf_hdr.e_shoff += shift;
-    }
-
+    // Copy ELF header with updated entry point
     memcpy(data->output_bytes, &data->elf_hdr, sizeof(Elf64_Ehdr));
-    size_t write_offset = sizeof(Elf64_Ehdr); 
+    
+    // Copy program headers (including the repurposed one)
+    size_t write_offset = sizeof(Elf64_Ehdr);
     memcpy(&data->output_bytes[write_offset], data->prgm_hdrs, data->size_prgm_hdrs);
     write_offset += data->size_prgm_hdrs;
-    memcpy(&data->output_bytes[write_offset], &data->pt_load, sizeof(Elf64_Phdr));
-    write_offset += sizeof(Elf64_Phdr);
-    size_t remaining_size = data->file_size - original_headers_end;
-    lseek(data->fd, original_headers_end, SEEK_SET);
+    
+    // Copy the rest of the original file
+    size_t remaining_start = sizeof(Elf64_Ehdr) + data->size_prgm_hdrs;
+    size_t remaining_size = data->file_size - remaining_start;
+    lseek(data->fd, remaining_start, SEEK_SET);
     size_t bytes_read = read(data->fd, &data->output_bytes[write_offset], remaining_size);
     if (bytes_read != remaining_size) {
         perror("Couldnt read remaining file data correctly\n");
         exit(1);
     }
-    if (data->elf_hdr.e_shoff > 0 && data->elf_hdr.e_shnum > 0) {
-        size_t sh_offset_in_output = data->elf_hdr.e_shoff;
-        for (int i = 0; i < data->elf_hdr.e_shnum; i++) {
-            Elf64_Shdr *shdr = (Elf64_Shdr *)&data->output_bytes[sh_offset_in_output + i * sizeof(Elf64_Shdr)];
-            if (shdr->sh_offset >= original_headers_end) {
-                shdr->sh_offset += shift;
-            }
-        }
-    }
 
-    memcpy(&data->output_bytes[data->file_size], code, sizeof(code));
+    // Copy shellcode to the end of the file
+    size_t shellcode_offset = data->file_size;
+    memcpy(&data->output_bytes[shellcode_offset], code, sizeof(code));
+    
+    // Inject the original entry point address into the "mov rax, <address>" instruction
+    // The "mov rax, imm64" instruction (0x48 0xb8) is followed by 8 bytes for the address
+    // Calculate offset: pushes(15) + syscall_setup(24) + pops(15) + mov_opcode(2) = 56
+    size_t address_offset = shellcode_offset + 56;  // Position of address operand in "mov rax, imm64"
+    memcpy(&data->output_bytes[address_offset], &data->old_entrypoint, sizeof(uint64_t));
 
     data->fd_out = open("woody", O_CREAT | O_WRONLY | O_TRUNC, 0644);
     if (data->fd_out < 3) {
