@@ -112,13 +112,34 @@ void write_output_file(t_woodyData *data) {
     size_t shift = sizeof(Elf64_Phdr);
     for (int i = 0; i < original_phnum; i++) {
         if (data->prgm_hdrs[i].p_offset >= original_headers_end) {
+            uint64_t old_offset = data->prgm_hdrs[i].p_offset;
             data->prgm_hdrs[i].p_offset += shift;
-            // For non-LOAD segments, also adjust vaddr and paddr
+            
+            // For non-LOAD segments, recalculate vaddr based on containing LOAD segment
             // LOAD segments define the virtual address space mapping, so their vaddr is fixed
-            // Other segments' addresses are within LOAD segments and follow their data
             if (data->prgm_hdrs[i].p_type != PT_LOAD) {
-                data->prgm_hdrs[i].p_vaddr += shift;
-                data->prgm_hdrs[i].p_paddr += shift;
+                // Find the LOAD segment containing this segment (before shift)
+                for (int j = 0; j < original_phnum; j++) {
+                    // Check against old_offset (before we shifted this segment)
+                    uint64_t load_old_offset = data->prgm_hdrs[j].p_offset;
+                    if (data->prgm_hdrs[j].p_type == PT_LOAD) {
+                        // If LOAD was also shifted, use its old offset
+                        if (load_old_offset >= original_headers_end + shift) {
+                            load_old_offset -= shift;
+                        }
+                    }
+                    
+                    if (data->prgm_hdrs[j].p_type == PT_LOAD &&
+                        old_offset >= load_old_offset &&
+                        old_offset < load_old_offset + data->prgm_hdrs[j].p_filesz) {
+                        // Calculate offset within the LOAD segment (using new offsets)
+                        uint64_t offset_in_load = data->prgm_hdrs[i].p_offset - data->prgm_hdrs[j].p_offset;
+                        // Calculate new vaddr based on LOAD segment's vaddr
+                        data->prgm_hdrs[i].p_vaddr = data->prgm_hdrs[j].p_vaddr + offset_in_load;
+                        data->prgm_hdrs[i].p_paddr = data->prgm_hdrs[i].p_vaddr;
+                        break;
+                    }
+                }
             }
         }
     }
@@ -148,6 +169,60 @@ void write_output_file(t_woodyData *data) {
             if (shdr->sh_offset >= original_headers_end) {
                 shdr->sh_offset += shift;
             }
+        }
+    }
+    
+    // Fix DYNAMIC section entries that contain addresses pointing to shifted data
+    // Find the first LOAD segment to determine which addresses need adjustment
+    uint64_t first_load_end_vaddr = 0;
+    for (int i = 0; i < original_phnum; i++) {
+        if (data->prgm_hdrs[i].p_type == PT_LOAD && data->prgm_hdrs[i].p_vaddr == 0) {
+            first_load_end_vaddr = data->prgm_hdrs[i].p_memsz;
+            break;
+        }
+    }
+    
+    // Find the DYNAMIC segment
+    for (int i = 0; i < original_phnum; i++) {
+        if (data->prgm_hdrs[i].p_type == PT_DYNAMIC) {
+            // Get the DYNAMIC segment location in the output file
+            size_t dyn_offset = data->prgm_hdrs[i].p_offset;
+            Elf64_Dyn *dyn = (Elf64_Dyn *)&data->output_bytes[dyn_offset];
+            
+            // Iterate through dynamic entries
+            for (size_t j = 0; j < data->prgm_hdrs[i].p_filesz / sizeof(Elf64_Dyn); j++) {
+                if (dyn[j].d_tag == DT_NULL) {
+                    break;
+                }
+                
+                // These tags contain virtual addresses that may need adjustment
+                // Only adjust if address is in first LOAD segment (where vaddr == offset)
+                // and points to data after the program headers
+                switch (dyn[j].d_tag) {
+                    case DT_PLTGOT:
+                    case DT_HASH:
+                    case DT_STRTAB:
+                    case DT_SYMTAB:
+                    case DT_RELA:
+                    case DT_JMPREL:
+                    case DT_VERSYM:
+                    case DT_VERNEED:
+                    case DT_INIT:
+                    case DT_FINI:
+                    case DT_GNU_HASH:
+                    case DT_INIT_ARRAY:
+                    case DT_FINI_ARRAY:
+                        // If address is in first LOAD segment and points past program headers
+                        if (dyn[j].d_un.d_ptr >= original_headers_end && 
+                            dyn[j].d_un.d_ptr < first_load_end_vaddr) {
+                            dyn[j].d_un.d_ptr += shift;
+                        }
+                        break;
+                    default:
+                        break;
+                }
+            }
+            break;
         }
     }
 
