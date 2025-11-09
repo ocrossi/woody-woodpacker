@@ -12,7 +12,9 @@ typedef struct s_woodyData {
     size_t file_size;
     int fd_out;
     size_t output_size;
-    char* output_bytes; 
+    char* output_bytes;
+
+    size_t size_prgm_hdrs;
 
     uint64_t new_entrypoint;
     uint64_t old_entrypoint;
