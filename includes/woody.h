@@ -8,18 +8,20 @@
 #define KEY_SIZE 8
 
 typedef struct s_woodyData {
+    int fd;
     size_t file_size;
-    size_t offset_ptnote; // how many bytes starting at the beginning of the file
+    int fd_out;
+    size_t output_size;
+    char* output_bytes; 
+    // size_t offset_ptnote; // how many bytes starting at the beginning of the file
+    
 
-    void *new_entrypoint;
+    uint64_t new_entrypoint;
     char key[KEY_SIZE];
 
-    char* output_bytes; 
-    int payload_size;
-    uint64_t injection_addr;
+    // int payload_size;
+    // uint64_t injection_addr;
 
-    int fd;
-    int fd_out;
 
     Elf64_Phdr pt_note; // lu tel quel dans le fichier
     Elf64_Phdr pt_load; // transforme pour infection
