@@ -164,7 +164,7 @@ int is_valid_elf64_program_header(const Elf64_Phdr *phdr, int index) {
 }
 
 void read_parse_program_headers(t_woodyData *data) {
-    ssize_t bytes_read = 0;
+    size_t bytes_read = 0;
 
     size_t size_prgm_headers = sizeof(Elf64_Phdr) * data->elf_hdr.e_phnum;
     data->prgm_hdrs = malloc(size_prgm_headers);
@@ -173,29 +173,23 @@ void read_parse_program_headers(t_woodyData *data) {
         perror("Malloc program headers array failed\n");
         exit(1);
     }
-    memset(data->prgm_hdrs, 0, size_prgm_headers);
-    int offset_output = 0;
+    lseek(data->fd, sizeof(Elf64_Ehdr), SEEK_SET);
+    bytes_read = read(data->fd, data->prgm_hdrs, size_prgm_headers);
+    if (bytes_read != size_prgm_headers) {
+        perror("Couldnt read elf program headers properly\n");
+        exit(1);
+    }
     for (int i = 0; i < data->elf_hdr.e_phnum; i++) {
+        int offset = i * data->elf_hdr.e_phentsize; 
         Elf64_Phdr current;
-        int offset = data->elf_hdr.e_phoff + i * data->elf_hdr.e_phentsize;
-        lseek(data->fd, offset, SEEK_SET);
         memset(&current, 0, sizeof(Elf64_Phdr));
-        bytes_read = read(data->fd, &current, data->elf_hdr.e_phentsize);
-        if (bytes_read != data->elf_hdr.e_phentsize) {
-            printf("Couldnt read program headers correctly\n");
-            exit(1);
-        }
-        if (!is_valid_elf64_program_header(&current, i)) {
+        memcpy(&current, &data->prgm_hdrs[offset], data->elf_hdr.e_phentsize);
+         if (!is_valid_elf64_program_header(&current, i)) {
             printf("Couldnt parse program header correctly at index %d\n", i);
             exit(1);
-        }
-        printf("what is offset output? %d\n", offset_output);
-        memcpy(&data->prgm_hdrs[offset_output], &current, sizeof(Elf64_Phdr));
-        print_bytes(&data->prgm_hdrs[offset_output], sizeof(Elf64_Phdr));
-        printf("-------------------------------------------\n");
-        offset_output += sizeof(Elf64_Phdr);
+        }       
     }
-    print_bytes(data->prgm_hdrs, size_prgm_headers);
+    // print_bytes(data->prgm_hdrs, size_prgm_headers);
 }
 
 int is_valid_elf64_section_header(const Elf64_Shdr *shdr) {
@@ -277,10 +271,6 @@ t_woodyData read_parse_headers(const char *filename) {
 }
 
 void create_pt_load(t_woodyData *data) {
-    // malloc new size of file 
-    // add all headers 
-    // add new program header 
-    // change elf_header
     Elf64_Phdr new_ptload;
 
     memset(&new_ptload, 0, sizeof(Elf64_Phdr));
@@ -300,6 +290,8 @@ void create_pt_load(t_woodyData *data) {
     data->pt_load = new_ptload;
 
     data->elf_hdr.e_phnum++;
+    data->old_entrypoint = data->elf_hdr.e_entry;
+    data->elf_hdr.e_entry = data->new_entrypoint;
 }
 
 void write_output_file(t_woodyData *data) {
@@ -336,7 +328,6 @@ void write_output_file(t_woodyData *data) {
 void infect_output_data(t_woodyData *data) {
     create_pt_load(data);
     write_output_file(data);
-    // write_output_file(&data);
 }
 
 int main(int argc, char *argv[])
