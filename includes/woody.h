@@ -31,3 +31,8 @@ extern void encrypt(const char *key, const char *text, size_t len);
 extern void decrypt(const char *key, const char *text, size_t len);
 
 void print_hex(const char* buffer, size_t n);
+
+// Read and parse functions
+void read_parse_elf_header(const char *filename, t_woodyData *data);
+void read_parse_program_headers(t_woodyData *data);
+void read_parse_section_headers(t_woodyData *data);

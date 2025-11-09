@@ -20,17 +20,36 @@ void create_pt_load(t_woodyData *data) {
 
     memset(&new_ptload, 0, sizeof(Elf64_Phdr));
 
-    data->new_entrypoint = data->file_size + sizeof(Elf64_Phdr) + 0xc000000; 
+    // Find the maximum virtual address from existing PT_LOAD segments
+    uint64_t max_vaddr = 0;
+    for (int i = 0; i < data->elf_hdr.e_phnum; i++) {
+        if (data->prgm_hdrs[i].p_type == PT_LOAD) {
+            uint64_t end_addr = data->prgm_hdrs[i].p_vaddr + data->prgm_hdrs[i].p_memsz;
+            if (end_addr > max_vaddr) {
+                max_vaddr = end_addr;
+            }
+        }
+    }
+    
+    // Align to page boundary (0x1000)
+    max_vaddr = (max_vaddr + 0x1000 - 1) & ~(0x1000 - 1);
+    
+    // Calculate our virtual address maintaining proper alignment
+    uint64_t file_offset = data->file_size + sizeof(Elf64_Phdr);
+    uint64_t offset_mod = file_offset % 0x1000;
+    data->new_entrypoint = max_vaddr + offset_mod;
 
     new_ptload.p_type = PT_LOAD;
     new_ptload.p_flags = PF_X | PF_R;
-    new_ptload.p_offset = data->file_size + sizeof(Elf64_Phdr);
+    new_ptload.p_offset = file_offset;
     new_ptload.p_vaddr = data->new_entrypoint;
+    new_ptload.p_paddr = data->new_entrypoint;
 
     // new_ptload.p_memsz = data->payload_size;
     // new_ptload.p_filesz = data->payload_size;
     new_ptload.p_memsz = 1024;
     new_ptload.p_filesz = 1024;
+    new_ptload.p_align = 0x1000;
 
     data->pt_load = new_ptload;
 
@@ -39,7 +58,7 @@ void create_pt_load(t_woodyData *data) {
     data->elf_hdr.e_entry = data->new_entrypoint;
 }
 
-char code[] = {
+char code_template[] = {
     0x50,                               // push rax
     0x51,                               // push rcx
     0x52,                               // push rdx
@@ -54,7 +73,7 @@ char code[] = {
     // write(1, message, message_len)
     0xb8, 0x01, 0x00, 0x00, 0x00,       // mov eax, 1 (sys_write)
     0xbf, 0x01, 0x00, 0x00, 0x00,       // mov edi, 1 (stdout)
-    0x48, 0x8d, 0x35, 0x1e, 0x00, 0x00, 0x00,  // lea rsi, [rip+0x1e]  (message)
+    0x48, 0x8d, 0x35, 0x26, 0x00, 0x00, 0x00,  // lea rsi, [rip+0x26]  (message)
     0xba, 0xf, 0x00, 0x00, 0x00,       // mov edx, 15 (message length)
     0x0f, 0x05,                         // syscall
     // Restore all registers
@@ -69,6 +88,9 @@ char code[] = {
     0x5a,                               // pop rdx
     0x59,                               // pop rcx
     0x58,                               // pop rax
+    // Jump to original entry point
+    0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // mov rax, <old_entry> (to be filled)
+    0xFF, 0xE0,                         // jmp rax
     '.','.','.','.','W', 'O', 'O', 'D', 'Y','.','.','.','.', '\n', 0x00
 };
 
@@ -90,7 +112,35 @@ void write_output_file(t_woodyData *data) {
     size_t shift = sizeof(Elf64_Phdr);
     for (int i = 0; i < original_phnum; i++) {
         if (data->prgm_hdrs[i].p_offset >= original_headers_end) {
+            uint64_t old_offset = data->prgm_hdrs[i].p_offset;
             data->prgm_hdrs[i].p_offset += shift;
+            
+            // For non-LOAD segments, recalculate vaddr based on containing LOAD segment
+            // LOAD segments define the virtual address space mapping, so their vaddr is fixed
+            if (data->prgm_hdrs[i].p_type != PT_LOAD) {
+                // Find the LOAD segment containing this segment (before shift)
+                for (int j = 0; j < original_phnum; j++) {
+                    // Check against old_offset (before we shifted this segment)
+                    uint64_t load_old_offset = data->prgm_hdrs[j].p_offset;
+                    if (data->prgm_hdrs[j].p_type == PT_LOAD) {
+                        // If LOAD was also shifted, use its old offset
+                        if (load_old_offset >= original_headers_end + shift) {
+                            load_old_offset -= shift;
+                        }
+                    }
+                    
+                    if (data->prgm_hdrs[j].p_type == PT_LOAD &&
+                        old_offset >= load_old_offset &&
+                        old_offset < load_old_offset + data->prgm_hdrs[j].p_filesz) {
+                        // Calculate offset within the LOAD segment (using new offsets)
+                        uint64_t offset_in_load = data->prgm_hdrs[i].p_offset - data->prgm_hdrs[j].p_offset;
+                        // Calculate new vaddr based on LOAD segment's vaddr
+                        data->prgm_hdrs[i].p_vaddr = data->prgm_hdrs[j].p_vaddr + offset_in_load;
+                        data->prgm_hdrs[i].p_paddr = data->prgm_hdrs[i].p_vaddr;
+                        break;
+                    }
+                }
+            }
         }
     }
 
@@ -121,8 +171,68 @@ void write_output_file(t_woodyData *data) {
             }
         }
     }
+    
+    // Fix DYNAMIC section entries that contain addresses pointing to shifted data
+    // Find the first LOAD segment to determine which addresses need adjustment
+    uint64_t first_load_end_vaddr = 0;
+    for (int i = 0; i < original_phnum; i++) {
+        if (data->prgm_hdrs[i].p_type == PT_LOAD && data->prgm_hdrs[i].p_vaddr == 0) {
+            first_load_end_vaddr = data->prgm_hdrs[i].p_memsz;
+            break;
+        }
+    }
+    
+    // Find the DYNAMIC segment
+    for (int i = 0; i < original_phnum; i++) {
+        if (data->prgm_hdrs[i].p_type == PT_DYNAMIC) {
+            // Get the DYNAMIC segment location in the output file
+            size_t dyn_offset = data->prgm_hdrs[i].p_offset;
+            Elf64_Dyn *dyn = (Elf64_Dyn *)&data->output_bytes[dyn_offset];
+            
+            // Iterate through dynamic entries
+            for (size_t j = 0; j < data->prgm_hdrs[i].p_filesz / sizeof(Elf64_Dyn); j++) {
+                if (dyn[j].d_tag == DT_NULL) {
+                    break;
+                }
+                
+                // These tags contain virtual addresses that may need adjustment
+                // Only adjust if address is in first LOAD segment (where vaddr == offset)
+                // and points to data after the program headers
+                switch (dyn[j].d_tag) {
+                    case DT_PLTGOT:
+                    case DT_HASH:
+                    case DT_STRTAB:
+                    case DT_SYMTAB:
+                    case DT_RELA:
+                    case DT_JMPREL:
+                    case DT_VERSYM:
+                    case DT_VERNEED:
+                    case DT_INIT:
+                    case DT_FINI:
+                    case DT_GNU_HASH:
+                    case DT_INIT_ARRAY:
+                    case DT_FINI_ARRAY:
+                        // If address is in first LOAD segment and points past program headers
+                        if (dyn[j].d_un.d_ptr >= original_headers_end && 
+                            dyn[j].d_un.d_ptr < first_load_end_vaddr) {
+                            dyn[j].d_un.d_ptr += shift;
+                        }
+                        break;
+                    default:
+                        break;
+                }
+            }
+            break;
+        }
+    }
 
-    memcpy(&data->output_bytes[data->file_size + sizeof(Elf64_Phdr)], code, sizeof(code));
+    // Copy shellcode template to output
+    size_t shellcode_offset = data->file_size + sizeof(Elf64_Phdr);
+    memcpy(&data->output_bytes[shellcode_offset], code_template, sizeof(code_template));
+    
+    // Fill in the old entry point address in the shellcode (at offset 61, after register restoration)
+    uint64_t old_entry = data->old_entrypoint;
+    memcpy(&data->output_bytes[shellcode_offset + 61], &old_entry, sizeof(uint64_t));
 
     data->fd_out = open("woody", O_CREAT | O_WRONLY | O_TRUNC, 0755);
     if (data->fd_out < 3) {
