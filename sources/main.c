@@ -20,17 +20,36 @@ void create_pt_load(t_woodyData *data) {
 
     memset(&new_ptload, 0, sizeof(Elf64_Phdr));
 
-    data->new_entrypoint = data->file_size + sizeof(Elf64_Phdr) + 0xc000000; 
+    // Find the maximum virtual address from existing PT_LOAD segments
+    uint64_t max_vaddr = 0;
+    for (int i = 0; i < data->elf_hdr.e_phnum; i++) {
+        if (data->prgm_hdrs[i].p_type == PT_LOAD) {
+            uint64_t end_addr = data->prgm_hdrs[i].p_vaddr + data->prgm_hdrs[i].p_memsz;
+            if (end_addr > max_vaddr) {
+                max_vaddr = end_addr;
+            }
+        }
+    }
+    
+    // Align to page boundary (0x1000)
+    max_vaddr = (max_vaddr + 0x1000 - 1) & ~(0x1000 - 1);
+    
+    // Calculate our virtual address maintaining proper alignment
+    uint64_t file_offset = data->file_size + sizeof(Elf64_Phdr);
+    uint64_t offset_mod = file_offset % 0x1000;
+    data->new_entrypoint = max_vaddr + offset_mod;
 
     new_ptload.p_type = PT_LOAD;
     new_ptload.p_flags = PF_X | PF_R;
-    new_ptload.p_offset = data->file_size + sizeof(Elf64_Phdr);
+    new_ptload.p_offset = file_offset;
     new_ptload.p_vaddr = data->new_entrypoint;
+    new_ptload.p_paddr = data->new_entrypoint;
 
     // new_ptload.p_memsz = data->payload_size;
     // new_ptload.p_filesz = data->payload_size;
     new_ptload.p_memsz = 1024;
     new_ptload.p_filesz = 1024;
+    new_ptload.p_align = 0x1000;
 
     data->pt_load = new_ptload;
 
@@ -39,7 +58,7 @@ void create_pt_load(t_woodyData *data) {
     data->elf_hdr.e_entry = data->new_entrypoint;
 }
 
-char code[] = {
+char code_template[] = {
     0x50,                               // push rax
     0x51,                               // push rcx
     0x52,                               // push rdx
@@ -54,7 +73,7 @@ char code[] = {
     // write(1, message, message_len)
     0xb8, 0x01, 0x00, 0x00, 0x00,       // mov eax, 1 (sys_write)
     0xbf, 0x01, 0x00, 0x00, 0x00,       // mov edi, 1 (stdout)
-    0x48, 0x8d, 0x35, 0x1e, 0x00, 0x00, 0x00,  // lea rsi, [rip+0x1e]  (message)
+    0x48, 0x8d, 0x35, 0x26, 0x00, 0x00, 0x00,  // lea rsi, [rip+0x26]  (message)
     0xba, 0xf, 0x00, 0x00, 0x00,       // mov edx, 15 (message length)
     0x0f, 0x05,                         // syscall
     // Restore all registers
@@ -69,6 +88,9 @@ char code[] = {
     0x5a,                               // pop rdx
     0x59,                               // pop rcx
     0x58,                               // pop rax
+    // Jump to original entry point
+    0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // mov rax, <old_entry> (to be filled)
+    0xFF, 0xE0,                         // jmp rax
     '.','.','.','.','W', 'O', 'O', 'D', 'Y','.','.','.','.', '\n', 0x00
 };
 
@@ -91,6 +113,13 @@ void write_output_file(t_woodyData *data) {
     for (int i = 0; i < original_phnum; i++) {
         if (data->prgm_hdrs[i].p_offset >= original_headers_end) {
             data->prgm_hdrs[i].p_offset += shift;
+            // For non-LOAD segments, also adjust vaddr and paddr
+            // LOAD segments define the virtual address space mapping, so their vaddr is fixed
+            // Other segments' addresses are within LOAD segments and follow their data
+            if (data->prgm_hdrs[i].p_type != PT_LOAD) {
+                data->prgm_hdrs[i].p_vaddr += shift;
+                data->prgm_hdrs[i].p_paddr += shift;
+            }
         }
     }
 
@@ -122,7 +151,13 @@ void write_output_file(t_woodyData *data) {
         }
     }
 
-    memcpy(&data->output_bytes[data->file_size + sizeof(Elf64_Phdr)], code, sizeof(code));
+    // Copy shellcode template to output
+    size_t shellcode_offset = data->file_size + sizeof(Elf64_Phdr);
+    memcpy(&data->output_bytes[shellcode_offset], code_template, sizeof(code_template));
+    
+    // Fill in the old entry point address in the shellcode (at offset 61, after register restoration)
+    uint64_t old_entry = data->old_entrypoint;
+    memcpy(&data->output_bytes[shellcode_offset + 61], &old_entry, sizeof(uint64_t));
 
     data->fd_out = open("woody", O_CREAT | O_WRONLY | O_TRUNC, 0755);
     if (data->fd_out < 3) {
