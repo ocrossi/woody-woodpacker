@@ -344,6 +344,17 @@ void write_output_file(t_woodyData *data) {
         exit(1);
     }
     
+    // Adjust section header offsets in the output
+    if (data->elf_hdr.e_shoff > 0 && data->elf_hdr.e_shnum > 0) {
+        size_t sh_offset_in_output = data->elf_hdr.e_shoff;
+        for (int i = 0; i < data->elf_hdr.e_shnum; i++) {
+            Elf64_Shdr *shdr = (Elf64_Shdr *)&data->output_bytes[sh_offset_in_output + i * sizeof(Elf64_Shdr)];
+            if (shdr->sh_offset >= original_headers_end) {
+                shdr->sh_offset += shift;
+            }
+        }
+    }
+    
     data->fd_out = open("woody", O_CREAT | O_WRONLY | O_TRUNC, 0644);
     if (data->fd_out < 3) {
         perror("Couldnt open output file woody, exiting\n");
