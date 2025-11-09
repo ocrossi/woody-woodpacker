@@ -272,12 +272,21 @@ void create_pt_load(t_woodyData *data) {
 
     memset(&new_ptload, 0, sizeof(Elf64_Phdr));
 
-    data->new_entrypoint = data->file_size + 0xc000000; 
+    // Place the new segment after existing segments, maintaining alignment constraints
+    // vaddr % p_align must equal offset % p_align
+    // Choose a base address well beyond existing segments (0x600000)
+    // Adjust so that (base + file_size) % 0x1000 == file_size % 0x1000
+    uint64_t desired_vaddr_base = 0x600000;
+    uint64_t offset_page_offset = data->file_size % 0x1000;
+    uint64_t vaddr = desired_vaddr_base + offset_page_offset;
+    data->new_entrypoint = vaddr; 
 
     new_ptload.p_type = PT_LOAD;
     new_ptload.p_flags = PF_X | PF_R;
     new_ptload.p_offset = data->file_size;
     new_ptload.p_vaddr = data->new_entrypoint;
+    new_ptload.p_paddr = data->new_entrypoint;  // Physical address same as virtual for user space
+    new_ptload.p_align = 0x1000;  // Page alignment for LOAD segments
 
     // new_ptload.p_memsz = data->payload_size;
     // new_ptload.p_filesz = data->payload_size;
@@ -340,6 +349,14 @@ void write_output_file(t_woodyData *data) {
     // Adjust offsets in program headers that point beyond the program header table
     // since we're inserting a new program header
     size_t shift = sizeof(Elf64_Phdr);
+    
+    // Update the new PT_LOAD segment's offset and vaddr to account for the shift
+    data->pt_load.p_offset += shift;
+    data->pt_load.p_vaddr += shift;
+    data->pt_load.p_paddr += shift;  // Keep paddr in sync with vaddr
+    
+    // Update the entry point to match the new shellcode location
+    data->elf_hdr.e_entry += shift;
     for (int i = 0; i < original_phnum; i++) {
         if (data->prgm_hdrs[i].p_offset >= original_headers_end) {
             data->prgm_hdrs[i].p_offset += shift;
@@ -374,14 +391,31 @@ void write_output_file(t_woodyData *data) {
         }
     }
 
-    memcpy(&data->output_bytes[data->file_size], code, sizeof(code));
+    // Build shellcode with jump to original entry point
+    size_t shellcode_offset = data->file_size + shift;
+    unsigned char *shellcode_ptr = (unsigned char *)&data->output_bytes[shellcode_offset];
+    size_t sc_idx = 0;
+    
+    // Copy the static part of the shellcode (everything except the jump)
+    memcpy(shellcode_ptr, code, sizeof(code));
+    sc_idx = sizeof(code);
+    
+    // Add jump to original entry point: movabs rax, <old_entry>; jmp rax
+    shellcode_ptr[sc_idx++] = 0x48;  // REX.W prefix
+    shellcode_ptr[sc_idx++] = 0xb8;  // movabs rax, imm64
+    uint64_t old_entry = data->old_entrypoint;
+    memcpy(&shellcode_ptr[sc_idx], &old_entry, sizeof(uint64_t));
+    sc_idx += sizeof(uint64_t);
+    shellcode_ptr[sc_idx++] = 0xff;  // jmp rax
+    shellcode_ptr[sc_idx++] = 0xe0;
 
-    data->fd_out = open("woody", O_CREAT | O_WRONLY | O_TRUNC, 0644);
+    data->fd_out = open("woody", O_CREAT | O_WRONLY | O_TRUNC, 0755);
     if (data->fd_out < 3) {
         perror("Couldnt open output file woody, exiting\n");
         exit(1);
     }
     write(data->fd_out, data->output_bytes, data->output_size);
+    close(data->fd_out);
 }
 
 void infect_output_data(t_woodyData *data) {
