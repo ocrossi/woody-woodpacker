@@ -174,7 +174,6 @@ void read_parse_program_headers(t_woodyData *data) {
         exit(1);
     }
     memset(data->prgm_hdrs, 0, size_prgm_headers);
-    int offset_output = 0;
     for (int i = 0; i < data->elf_hdr.e_phnum; i++) {
         Elf64_Phdr current;
         int offset = data->elf_hdr.e_phoff + i * data->elf_hdr.e_phentsize;
@@ -189,11 +188,10 @@ void read_parse_program_headers(t_woodyData *data) {
             printf("Couldnt parse program header correctly at index %d\n", i);
             exit(1);
         }
-        printf("what is offset output? %d\n", offset_output);
-        memcpy(&data->prgm_hdrs[offset_output], &current, sizeof(Elf64_Phdr));
-        print_bytes(&data->prgm_hdrs[offset_output], sizeof(Elf64_Phdr));
+        printf("what is offset output? %d\n", i);
+        memcpy(&data->prgm_hdrs[i], &current, sizeof(Elf64_Phdr));
+        print_bytes(&data->prgm_hdrs[i], sizeof(Elf64_Phdr));
         printf("-------------------------------------------\n");
-        offset_output += sizeof(Elf64_Phdr);
     }
     print_bytes(data->prgm_hdrs, size_prgm_headers);
 }
