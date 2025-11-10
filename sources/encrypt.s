@@ -20,28 +20,5 @@ encrypt:
         jmp loop_text
     exit:
         ret
-        
-
-; write:
-;     call len
-;     ; mov edx, 0x12
-;     mov edx, ecx
-;     mov rax, 1
-;     syscall
-;     ret
-;
-; len:
-;     xor rcx, rcx ; compteur a 0
-;     mov rax, rsi
-;     loop:
-;         mov bl, [rax]
-;         cmp bl, 0
-;         je exit_len
-;         inc rcx 
-;         inc rax 
-;         jmp loop
-;     exit_len:
-;         ret
-
     
 ; https://app.x64.halb.it/ cool site for asm

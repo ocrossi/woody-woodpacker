@@ -12,11 +12,15 @@ typedef struct s_woodyData {
     size_t offset_ptnote; // how many bytes starting at the beginning of the file
 
     void *new_entrypoint;
-    char key[KEY_SIZE];
+    char key[KEY_SIZE + 1];
 
     char* output_bytes; 
     int payload_size;
+    int size_out;
     uint64_t injection_addr;
+
+    size_t start_encryption;
+    size_t len_encryption;
 
     int fd;
     int fd_out;
@@ -32,4 +36,11 @@ extern char* syscall_random(void *buf, int size);
 extern void encrypt(const char *key, const char *text, size_t len);
 extern void decrypt(const char *key, const char *text, size_t len);
 
+int is_valid_elf64_executable(const Elf64_Ehdr *header);
+int is_valid_elf64_program_header(const Elf64_Phdr *phdr, int index);
+int is_valid_elf64_section_header(const Elf64_Shdr *shdr);
+
 void print_hex(const char* buffer, size_t n);
+void	*ft_memset(void *b, int c, size_t len);
+void	*ft_memcpy(void *dst, const void *src, size_t n);
+size_t	ft_strlen(const char *str);
