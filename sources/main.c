@@ -1,5 +1,7 @@
 #include "../includes/woody.h"
 #include <elf.h>
+#include <stdio.h>
+#include <unistd.h>
 
 unsigned char code[] = {
     // Save all callee-saved registers
@@ -49,6 +51,18 @@ unsigned char code[] = {
 };
 
 void read_parse_sheaders(t_woodyData *data) {
+    Elf64_Shdr sh_strtab;
+    ft_memset(&sh_strtab, 0, sizeof(Elf64_Shdr));
+    lseek(data->fd, data->elf_hdr.e_shoff + data->elf_hdr.e_shstrndx * data->elf_hdr.e_shentsize, SEEK_SET);
+    read(data->fd, &sh_strtab, sizeof(Elf64_Shdr));
+    lseek(data->fd, sh_strtab.sh_offset, SEEK_SET);
+    char *sh_names = malloc(sh_strtab.sh_size);
+    if (sh_names == NULL) {
+        perror("Malloc for section header names failed\n");
+        exit(1);
+    }
+    read(data->fd, sh_names, sh_strtab.sh_size);
+
     ssize_t bytes_read = 0;
     lseek(data->fd, 0, SEEK_SET); // on repart au debut du fichier
     for (int i = 0; i < data->elf_hdr.e_shnum; i++) {
@@ -65,6 +79,7 @@ void read_parse_sheaders(t_woodyData *data) {
             printf("Couldnt parse program header correctly at index %d\n", i);
             exit(1);
         }
+        printf("shname %s\n", sh_names[i]);
     }
 }
 
