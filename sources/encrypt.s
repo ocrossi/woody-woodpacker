@@ -30,7 +30,7 @@ encrypt:
       mov rdi, r11
 ; https://app.x64.halb.it/ cool site for asm
 
-    // look for placeholder key, offset & size in rdi, rsi, rdx 
-    // lea placeholder key in r11 
-    // lea placeholder .text offset in rsi
-    // lea placeholder .text size in rsi
+    ; look for placeholder key, offset & size in rdi, rsi, rdx 
+    ; lea placeholder key in r11 
+    ; lea placeholder .text offset in rsi
+    ; lea placeholder .text size in rsi
