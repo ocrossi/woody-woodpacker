@@ -15,9 +15,9 @@ unsigned char code[] = {
     0x41, 0x53,                         // push r11
     0x90,                               // nop slide 16th byte pour alignment  
     // here decrypt
-    0x48, 0x8d, 0x3d, 0x2e, 0x00, 0x00, 0x00, // lea rdi, [rip+0x2e] (placeholder key address)
-    0x8b, 0x35, 0x31, 0x00, 0x00, 0x00,       // mov esi, [rip+0x31] (placeholder .text offset)
-    0x8b, 0x15, 0x2f, 0x00, 0x00, 0x00,       // mov edx, [rip+0x2f] (placeholder .text size)
+    0x48, 0x8d, 0x3d, 0x34, 0x00, 0x00, 0x00, // lea rdi, [rip+0x34] (placeholder key address)
+    0x8b, 0x35, 0x37, 0x00, 0x00, 0x00,       // mov esi, [rip+0x37] (placeholder .text offset)
+    0x8b, 0x15, 0x35, 0x00, 0x00, 0x00,       // mov edx, [rip+0x35] (placeholder .text size)
     0x49, 0x89, 0xfb,                         // mov r11, rdi
     0x8a, 0x0e,                               // mov cl, [rsi]
 
@@ -170,9 +170,9 @@ void generate_store_decrypt_data(t_woodyData *data) {
     // ft_memcpy(&data->output_bytes[offset_placeholder], &data->text_sec.sh_offset, 4);
     // ft_memcpy(&data->output_bytes[offset_placeholder + 4], &data->text_sec.sh_size, 4);
     printf("readable key is %s\n", data->key);
-    ft_memcpy(&data->output_bytes[data->file_size + 79], data->key, KEY_SIZE + 1);
+    ft_memcpy(&data->output_bytes[data->file_size + 75], data->key, KEY_SIZE + 1);
     // printf("pos where key is written %lx\n", (data->file_size + data->payload_size));
-    int offset_placeholder = data->file_size + 79 + KEY_SIZE + 1;
+    int offset_placeholder = data->file_size + 75 + KEY_SIZE + 1;
     ft_memcpy(&data->output_bytes[offset_placeholder], &data->text_sec.sh_offset, 4);
     ft_memcpy(&data->output_bytes[offset_placeholder + 4], &data->text_sec.sh_size, 4);
 }
