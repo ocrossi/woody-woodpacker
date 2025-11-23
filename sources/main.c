@@ -14,9 +14,15 @@ unsigned char code[] = {
     0x41, 0x52,                         // push r10
     0x41, 0x53,                         // push r11
     0x90,                               // nop slide 16th byte pour alignment  
+    // 16  
     // here decrypt
-
-    // loop text len 27
+    0x48, 0x8d, 0x3d, 0x34, 0x00, 0x00, 0x00, // lea rdi, [rip+0x34] (placeholder key address)
+    0x8b, 0x35, 0x37, 0x00, 0x00, 0x00,       // mov esi, [rip+0x37] (placeholder .text offset)
+    0x8b, 0x15, 0x35, 0x00, 0x00, 0x00,       // mov edx, [rip+0x35] (placeholder .text size)
+    0x49, 0x89, 0xfb,                         // mov r11, rdi
+    0x8a, 0x0e,                               // mov cl, [rsi]
+    // 40
+    // loop text len 
     0x8a, 0x06,                         // mov    al,BYTE PTR [rsi]
     0x8a, 0x1f,                         // mov    bl,BYTE PTR [rdi]
     0x48, 0xff, 0xca,                   // dec    rdx
@@ -34,17 +40,18 @@ unsigned char code[] = {
     
     // jmp apres placeholder 
     0xeb, 0x11,
-
-    0x0, 0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0, // placeholder key
-    0x0,0x0,0x0,0x0, // placeholder .text offset 
-    0x0,0x0,0x0,0x0, // placeholder .text size
-    
+    // 74
+    0x00, 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // placeholder key
+    0x00,0x00,0x00,0x00, // placeholder .text offset 
+    0x00,0x00,0x00,0x00, // placeholder .text size
+    // 102
     // write(1, message, message_len)
     0xb8, 0x01, 0x00, 0x00, 0x00,       // mov eax, 1 (sys_write)
     0xbf, 0x01, 0x00, 0x00, 0x00,       // mov edi, 1 (stdout)
     0x48, 0x8d, 0x35, 0x39, 0x00, 0x00, 0x00,  // lea rsi, [rip+0x39]  (message)
     0xba, 0xf, 0x00, 0x00, 0x00,       // mov edx, 15 (message length)
     0x0f, 0x05,                         // syscall
+    //126 
     // Restore all registers
     0x41, 0x5b,                         // pop r11
     0x41, 0x5a,                         // pop r10
@@ -57,6 +64,7 @@ unsigned char code[] = {
     0x5a,                               // pop rdx
     0x59,                               // pop rcx
     0x58,                               // pop rax
+    // 141 
     // For PIE: Calculate base address and add original entry offset
     // Get current RIP into rax
     0x48, 0x8d, 0x05, 0x00, 0x00, 0x00, 0x00,  // lea rax, [rip]  (current address)
@@ -96,11 +104,11 @@ void write_shellcode(t_woodyData *data, char *output) {
         exit(1);
     }
     
-    uint64_t offset_placeholder = data->injection_addr + 61; //pos 1er placeholder
+    uint64_t offset_placeholder = data->injection_addr + 149; //pos 1er placeholder
     
     ft_memcpy(shellcode_with_ret, code, data->payload_size);
-    ft_memcpy(shellcode_with_ret + 63, &offset_placeholder, sizeof(uint64_t)); // change offset 
-    ft_memcpy(shellcode_with_ret + 76, &data->elf_hdr.e_entry, sizeof(uint64_t)); // change offset
+    ft_memcpy(shellcode_with_ret + 151, &offset_placeholder, sizeof(uint64_t)); // change offset 
+    ft_memcpy(shellcode_with_ret + 164, &data->elf_hdr.e_entry, sizeof(uint64_t)); // change offset
     ft_memcpy(&output[data->file_size], shellcode_with_ret, data->payload_size);
 }
 
@@ -165,9 +173,9 @@ void generate_store_decrypt_data(t_woodyData *data) {
     // ft_memcpy(&data->output_bytes[offset_placeholder], &data->text_sec.sh_offset, 4);
     // ft_memcpy(&data->output_bytes[offset_placeholder + 4], &data->text_sec.sh_size, 4);
     printf("readable key is %s\n", data->key);
-    ft_memcpy(&data->output_bytes[data->file_size + 16], data->key, KEY_SIZE + 1);
+    ft_memcpy(&data->output_bytes[data->file_size + 75], data->key, KEY_SIZE + 1);
     // printf("pos where key is written %lx\n", (data->file_size + data->payload_size));
-    int offset_placeholder = data->file_size + 16 + KEY_SIZE + 1;
+    int offset_placeholder = data->file_size + 75 + KEY_SIZE + 1;
     ft_memcpy(&data->output_bytes[offset_placeholder], &data->text_sec.sh_offset, 4);
     ft_memcpy(&data->output_bytes[offset_placeholder + 4], &data->text_sec.sh_size, 4);
 }
