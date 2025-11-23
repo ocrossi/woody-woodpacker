@@ -15,9 +15,7 @@ unsigned char code[] = {
     0x41, 0x53,                         // push r11
     0x90,                               // nop slide 16th byte pour alignment  
     // here decrypt
-    // instr 1
-    // instr 2
-    // instr 3
+
     // loop text len 27
     0x8a, 0x06,                         // mov    al,BYTE PTR [rsi]
     0x8a, 0x1f,                         // mov    bl,BYTE PTR [rdi]
