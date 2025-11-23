@@ -104,12 +104,51 @@ void write_shellcode(t_woodyData *data, char *output) {
         exit(1);
     }
     
-    uint64_t offset_placeholder = data->injection_addr + 149; //pos 1er placeholder
+    uint64_t offset_placeholder = data->injection_addr + 138; //pos 1er placeholder
     
-    ft_memcpy(shellcode_with_ret, code, data->payload_size);
-    ft_memcpy(shellcode_with_ret + 151, &offset_placeholder, sizeof(uint64_t)); // change offset 
-    ft_memcpy(shellcode_with_ret + 164, &data->elf_hdr.e_entry, sizeof(uint64_t)); // change offset
+    // Copy registers (0-14), then insert new instructions, keeping placeholders at original positions
+    ft_memcpy(shellcode_with_ret, code, 15);  // Copy registers saves (0-14)
+    
+    // Build new decrypt setup instructions at position 15
+    // LEA rdi, [rip+offset_to_key] - 7 bytes
+    shellcode_with_ret[15] = 0x48; shellcode_with_ret[16] = 0x8d; shellcode_with_ret[17] = 0x3d;
+    shellcode_with_ret[18] = 0x35; shellcode_with_ret[19] = 0x00; shellcode_with_ret[20] = 0x00; shellcode_with_ret[21] = 0x00;  // offset to key at 75 from RIP at 22
+    
+    // LEA rsi, [rip+offset_to_text] - 7 bytes  
+    int32_t text_offset = (int32_t)(data->text_sec.sh_addr - (data->injection_addr + 29));
+    shellcode_with_ret[22] = 0x48; shellcode_with_ret[23] = 0x8d; shellcode_with_ret[24] = 0x35;
+    ft_memcpy(shellcode_with_ret + 25, &text_offset, 4);
+    
+    // MOV edx, [rip+offset_to_size] - 6 bytes
+    shellcode_with_ret[29] = 0x8b; shellcode_with_ret[30] = 0x15;
+    shellcode_with_ret[31] = 0x35; shellcode_with_ret[32] = 0x00; shellcode_with_ret[33] = 0x00; shellcode_with_ret[34] = 0x00;  // offset to size at 88 from RIP at 35
+    
+    // MOV r11, rdi - 3 bytes
+    shellcode_with_ret[35] = 0x49; shellcode_with_ret[36] = 0x89; shellcode_with_ret[37] = 0xfb;
+    
+    // MOV cl, [rsi] - 2 bytes
+    shellcode_with_ret[38] = 0x8a; shellcode_with_ret[39] = 0x0e;
+    
+    // Copy rest of shellcode (decrypt loop onwards) from original position 40 onwards  
+    ft_memcpy(shellcode_with_ret + 40, code + 40, data->payload_size - 40);
+    
+    // Patch PIE relocation placeholders
+    ft_memcpy(shellcode_with_ret + 140, &offset_placeholder, sizeof(uint64_t)); // change offset  
+    ft_memcpy(shellcode_with_ret + 153, &data->elf_hdr.e_entry, sizeof(uint64_t)); // change offset 
+    
     ft_memcpy(&output[data->file_size], shellcode_with_ret, data->payload_size);
+    
+    // Make text segment writable so shellcode can decrypt it
+    // Find the program header that contains the text section and add write permission
+    for (int i = 0; i < data->elf_hdr.e_phnum; i++) {
+        Elf64_Phdr *phdr = (Elf64_Phdr*)&output[data->elf_hdr.e_phoff + i * sizeof(Elf64_Phdr)];
+        if (phdr->p_type == PT_LOAD && 
+            data->text_sec.sh_offset >= phdr->p_offset && 
+            data->text_sec.sh_offset < phdr->p_offset + phdr->p_filesz) {
+            phdr->p_flags |= PF_W;  // Add write permission
+            break;
+        }
+    }
 }
 
 void write_output_data(t_woodyData *data) {
