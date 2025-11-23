@@ -1,7 +1,4 @@
 #include "../includes/woody.h"
-#include <elf.h>
-#include <stdio.h>
-#include <unistd.h>
 
 unsigned char code[] = {
     // Save all callee-saved registers
@@ -16,6 +13,35 @@ unsigned char code[] = {
     0x41, 0x51,                         // push r9
     0x41, 0x52,                         // push r10
     0x41, 0x53,                         // push r11
+    0x90,                               // nop slide 16th byte pour alignment  
+    // here decrypt
+    // look for placeholder key, offset & size in rdi, rsi, rdx 
+    // lea placeholder key in r11 
+    // lea placeholder .text offset in rsi
+    // lea placeholder .text size in rsi
+    // loop text len 27
+    0x8a, 0x06,                         // mov    al,BYTE PTR [rsi]
+    0x8a, 0x1f,                         // mov    bl,BYTE PTR [rdi]
+    0x48, 0xff, 0xca,                   // dec    rdx
+    0x48, 0x83, 0xfa, 0x00,             // cmp    rdx,0x0
+    0x74, 0x14,                         // je     26 <exit> !!
+    0x80, 0xfb, 0x00,                   // cmp    bl,0x0
+    0x74, 0x0a,                         // jump relative to reset key 
+    0x30, 0xd8,                         // xor    al,bl
+    0x88, 0x06,                         // mov    BYTE PTR [rsi],al
+    0x48, 0xff, 0xc6,                   // inc    rsi
+    0x48, 0xff, 0xc7,                   // inc    rdi
+    // reset key len 5
+    0x4c, 0x89, 0xdf,                   // mov    rdi,r11
+    0xeb, 0xdf,                         // jmp    <loop_text> !!  
+    
+    // jmp apres placeholder 
+    0xeb, 0x11,
+
+    0x0, 0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0, // placeholder key
+    0x0,0x0,0x0,0x0, // placeholder .text offset 
+    0x0,0x0,0x0,0x0, // placeholder .text size
+    
     // write(1, message, message_len)
     0xb8, 0x01, 0x00, 0x00, 0x00,       // mov eax, 1 (sys_write)
     0xbf, 0x01, 0x00, 0x00, 0x00,       // mov edi, 1 (stdout)
@@ -50,89 +76,6 @@ unsigned char code[] = {
     '.','.','.','.','W', 'O', 'O', 'D', 'Y','.','.','.','.', '\n', 0x00
 };
 
-void read_parse_sheaders(t_woodyData *data) {
-    Elf64_Shdr sh_strtab;
-    ft_memset(&sh_strtab, 0, sizeof(Elf64_Shdr));
-    lseek(data->fd, data->elf_hdr.e_shoff + data->elf_hdr.e_shstrndx * data->elf_hdr.e_shentsize, SEEK_SET);
-    read(data->fd, &sh_strtab, sizeof(Elf64_Shdr));
-    lseek(data->fd, sh_strtab.sh_offset, SEEK_SET);
-    char *sh_names = malloc(sh_strtab.sh_size);
-    if (sh_names == NULL) {
-        perror("Malloc for section header names failed\n");
-        exit(1);
-    }
-    read(data->fd, sh_names, sh_strtab.sh_size);
-
-    ssize_t bytes_read = 0;
-    lseek(data->fd, 0, SEEK_SET); // on repart au debut du fichier
-    for (int i = 0; i < data->elf_hdr.e_shnum; i++) {
-        Elf64_Shdr current;
-        int offset = data->elf_hdr.e_shoff + i * data->elf_hdr.e_shentsize;
-        lseek(data->fd, offset, SEEK_SET);
-        memset(&current, 0, sizeof(Elf64_Shdr));
-        bytes_read = read(data->fd, &current, data->elf_hdr.e_shentsize);
-        if (bytes_read != data->elf_hdr.e_shentsize) {
-            printf("Couldnt read section headers correctly\n");
-            exit(1);
-        }
-        if (!is_valid_elf64_section_header(&current)) {
-            printf("Couldnt parse program header correctly at index %d\n", i);
-            exit(1);
-        }
-        printf("shname %s\n", sh_names[i]);
-    }
-}
-
-void read_store_elf_header(t_woodyData *data) {
-    ssize_t bytes_read = read(data->fd, &data->elf_hdr, sizeof(Elf64_Ehdr));
-    if (bytes_read == -1 || bytes_read != sizeof(Elf64_Ehdr)) {
-        perror("couldnt read elf header correctly\n");
-        exit(1);
-    }
-    if (!is_valid_elf64_executable(&data->elf_hdr)) {
-        printf("parsing error for elf header");
-        exit(1);
-    }
-}
-
-Elf64_Phdr read_parse_phdrs_store_ptnote(t_woodyData *data) {
-    ssize_t bytes_read = 0;
-    for (int i = 0; i < data->elf_hdr.e_phnum; i++) {
-        Elf64_Phdr current;
-        int offset = data->elf_hdr.e_phoff + i * data->elf_hdr.e_phentsize;
-        lseek(data->fd, offset, SEEK_SET);
-        ft_memset(&current, 0, sizeof(Elf64_Phdr));
-        bytes_read = read(data->fd, &current, data->elf_hdr.e_phentsize);
-        if (bytes_read != data->elf_hdr.e_phentsize) {
-            printf("Couldnt read program headers correctly\n");
-            exit(1);
-        }
-        if (current.p_type == PT_NOTE) {
-            data->offset_ptnote = offset; 
-            printf("pt_note found\n");
-            return current;
-        }
-    }
-    printf("Fatal, didnt find any PT_Note program header");
-    exit(1);
-}
-
-
-t_woodyData read_store_headers(const char *filename) {
-    t_woodyData data;
-
-    ft_memset(&data, 0, sizeof(t_woodyData));
-    data.fd = open(filename, O_RDONLY);
-    if (data.fd < 3) {
-        printf("Couldnt open filename %s\n", filename);
-        exit(1);
-    }
-    read_store_elf_header(&data);
-    read_parse_phdrs_store_ptnote(&data);
-    read_parse_sheaders(&data);
-    return data;
-}
-
 void change_pt_note(t_woodyData *data) {
     ft_memcpy(&data->pt_load, &data->pt_note, sizeof(Elf64_Phdr));
 
@@ -144,6 +87,7 @@ void change_pt_note(t_woodyData *data) {
     data->pt_load.p_filesz = data->payload_size; 
     data->pt_load.p_memsz = data->payload_size;
     data->new_entrypoint = (void*)data->injection_addr;
+    printf("new endrtypoint %p\n", data->new_entrypoint);
 }
 
 void write_shellcode(t_woodyData *data, char *output) {
@@ -158,8 +102,8 @@ void write_shellcode(t_woodyData *data, char *output) {
     uint64_t offset_placeholder = data->injection_addr + 61; //pos 1er placeholder
     
     ft_memcpy(shellcode_with_ret, code, data->payload_size);
-    ft_memcpy(shellcode_with_ret + 63, &offset_placeholder, sizeof(uint64_t));
-    ft_memcpy(shellcode_with_ret + 76, &data->elf_hdr.e_entry, sizeof(uint64_t));
+    ft_memcpy(shellcode_with_ret + 63, &offset_placeholder, sizeof(uint64_t)); // change offset 
+    ft_memcpy(shellcode_with_ret + 76, &data->elf_hdr.e_entry, sizeof(uint64_t)); // change offset
     ft_memcpy(&output[data->file_size], shellcode_with_ret, data->payload_size);
 }
 
@@ -170,7 +114,7 @@ void write_output_data(t_woodyData *data) {
         perror("could not open file\n");
         exit(1);
     }
-    data->size_out = data->file_size + data->payload_size + KEY_SIZE + 1;
+    data->size_out = data->file_size + data->payload_size + KEY_SIZE + 1 + 8; // 8 bytes for text section len & offset
     char *output = malloc(data->size_out);
     if (output == NULL) {
         perror("output malloc failed\n");
@@ -192,8 +136,7 @@ void write_output_data(t_woodyData *data) {
     data->output_bytes = output;
 }
 
-void infect_output_data(const char *filename, t_woodyData *data) {
-    *data = read_store_headers(filename); 
+void infect_output_data(t_woodyData *data) {
     data->file_size = lseek(data->fd, 0, SEEK_END); // on recup la taille du fichier
     data->payload_size = sizeof(code);
     printf("data->payload size = %d\n", data->payload_size);
@@ -201,7 +144,7 @@ void infect_output_data(const char *filename, t_woodyData *data) {
     write_output_data(data);
 }
 
-void store_ascii_key(t_woodyData *data) {
+void get_ascii_key(t_woodyData *data) {
     for (int i = 0; i < KEY_SIZE; i++) {
         char c = data->key[i] % 60;
         c = c < 0 ? c * -1 : c;
@@ -215,16 +158,25 @@ void store_ascii_key(t_woodyData *data) {
     }
 }
 
-void generate_store_key(t_woodyData *data) {
+void generate_store_decrypt_data(t_woodyData *data) {
     syscall_random(data->key, KEY_SIZE);
-    store_ascii_key(data);
+    get_ascii_key(data);
+    // printf("readable key is %s\n", data->key);
+    // ft_memcpy(&data->output_bytes[data->file_size + data->payload_size], data->key, KEY_SIZE + 1);
+    // printf("pos where key is written %lx\n", (data->file_size + data->payload_size));
+    // int offset_placeholder = data->file_size + data->payload_size + KEY_SIZE + 1;
+    // ft_memcpy(&data->output_bytes[offset_placeholder], &data->text_sec.sh_offset, 4);
+    // ft_memcpy(&data->output_bytes[offset_placeholder + 4], &data->text_sec.sh_size, 4);
     printf("readable key is %s\n", data->key);
-    ft_memcpy(&data->output_bytes[data->file_size + data->payload_size], data->key, KEY_SIZE + 1);
-    printf("pos where key is written %lx\n", (data->file_size + data->payload_size));
-    // encrpyt section text 
+    ft_memcpy(&data->output_bytes[data->file_size + 16], data->key, KEY_SIZE + 1);
+    // printf("pos where key is written %lx\n", (data->file_size + data->payload_size));
+    int offset_placeholder = data->file_size + 16 + KEY_SIZE + 1;
+    ft_memcpy(&data->output_bytes[offset_placeholder], &data->text_sec.sh_offset, 4);
+    ft_memcpy(&data->output_bytes[offset_placeholder + 4], &data->text_sec.sh_size, 4);
 }
 
 void write_output_file(t_woodyData *data) {
+    printf("fd out %d\n", data->fd_out);
     write(data->fd_out, data->output_bytes, data->size_out);
     dprintf(1, "written\n");
 }
@@ -234,13 +186,21 @@ int main(int argc, char *argv[])
     t_woodyData data;
     ft_memset(&data, 0, sizeof(data));
     if (argc != 2) {
-        printf("Wrong number of args\n");
+        printf("Wrong number of arguments\n");
         return EXIT_FAILURE;
     }
-    infect_output_data(argv[1], &data);
-    generate_store_key(&data);
-    // encrypt(&data.output_bytes[data.start_encryption], data.key, data.len_encryption);
+    data = read_store_headers(argv[1]); 
+    infect_output_data(&data);
+    generate_store_decrypt_data(&data);
+    printf("fd out %d\n", data.fd_out);
+    printf("size of text section %lu\n", data.text_sec.sh_size);
+    printf("offset  text section %lu\n", data.text_sec.sh_offset);
+    printf("offset  text section %lu\n", data.text_sec.sh_offset);
+    printf("size of output %d\n", data.size_out);
+
+    encrypt(data.key, &data.output_bytes[data.text_sec.sh_offset] ,data.text_sec.sh_size);
     write_output_file(&data);
 
     return EXIT_SUCCESS;
+    //  objdump -d decrypt.o -M intel -> gets instructions with bytes
 }

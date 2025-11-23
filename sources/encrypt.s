@@ -21,4 +21,11 @@ encrypt:
     exit:
         ret
     
+    test:
+      lea r11, [ rel $ + 35] ; nasm pas de rip mais rel $
+      lea rdi, [rel $  + 36]
+      lea rdx, [rel $  + 45]
+      lea rdx, [rel $  + 45]
+      jmp $ + 10
+      mov rdi, r11
 ; https://app.x64.halb.it/ cool site for asm

@@ -27,6 +27,7 @@ typedef struct s_woodyData {
 
     Elf64_Phdr pt_note; // lu tel quel dans le fichier
     Elf64_Phdr pt_load; // transforme pour infection
+    Elf64_Shdr text_sec; // transforme pour infection
     Elf64_Ehdr elf_hdr;
     Elf64_Phdr *prgm_hdrs;
 } t_woodyData;
@@ -44,3 +45,10 @@ void print_hex(const char* buffer, size_t n);
 void	*ft_memset(void *b, int c, size_t len);
 void	*ft_memcpy(void *dst, const void *src, size_t n);
 size_t	ft_strlen(const char *str);
+int		ft_strcmp(const char *s1, const char *s2);
+
+void read_parse_sheaders(t_woodyData *data);
+void read_store_elf_header(t_woodyData *data);
+Elf64_Phdr read_parse_phdrs_store_ptnote(t_woodyData *data);
+t_woodyData read_store_headers(const char *filename);
+char* read_shstrtab(t_woodyData *data);
