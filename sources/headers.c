@@ -2,6 +2,7 @@
 
 void read_parse_sheaders(t_woodyData *data) {
     char* sh_names = read_shstrtab(data);
+    char control = 0;
 
     ssize_t bytes_read = 0;
     for (int i = 0; i < data->elf_hdr.e_shnum; i++) {
@@ -12,19 +13,25 @@ void read_parse_sheaders(t_woodyData *data) {
         bytes_read = read(data->fd, &current, data->elf_hdr.e_shentsize);
         if (bytes_read != data->elf_hdr.e_shentsize) {
             printf("Couldnt read section headers correctly\n");
+            free(sh_names);
             exit(1);
         }
         if (!is_valid_elf64_section_header(&current)) {
             printf("Couldnt parse program header correctly at index %d\n", i);
+            free(sh_names);
             exit(1);
         }
-        // printf("test index name = %d\n", current.sh_name);
-        printf("test sheader name = %s\n", &sh_names[current.sh_name]);
         if (ft_strcmp(".text", &sh_names[current.sh_name]) == 0) {
-            printf("found text section\n");
             ft_memcpy(&data->text_sec, &current, sizeof(Elf64_Shdr));
+            control = 1;
         }  
-  }
+    }
+    if (control == 0) {
+        printf("No text section found in input binary, either the binary was stripped or it is not an executable, exiting ...\n");
+        free(sh_names);
+        exit(1);
+    }
+    free(sh_names);
 }
 
 void read_store_elf_header(t_woodyData *data) {
@@ -53,11 +60,10 @@ Elf64_Phdr read_parse_phdrs_store_ptnote(t_woodyData *data) {
         }
         if (current.p_type == PT_NOTE) {
             data->offset_ptnote = offset; 
-            printf("pt_note found\n");
             return current;
         }
     }
-    printf("Fatal, didnt find any PT_Note program header");
+    printf("Fatal, didnt find any PT_Note program header,  exiting ...\n");
     exit(1);
 }
 

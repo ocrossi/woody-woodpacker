@@ -9,3 +9,5 @@ syscall_random:
     syscall 
     pop rbp
     ret
+
+segment .note.GNU-stack

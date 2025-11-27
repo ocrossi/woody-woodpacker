@@ -13,15 +13,13 @@ unsigned char code[] = {
     0x41, 0x51,                         // push r9
     0x41, 0x52,                         // push r10
     0x41, 0x53,                         // push r11
-    0x90,                               // nop slide 16th byte pour alignment  
-    // 16  
-    // here decrypt
-    0x48, 0x8d, 0x3d, 0x34, 0x00, 0x00, 0x00, // lea rdi, [rip+0x34] (placeholder key address)
-    0x8b, 0x35, 0x37, 0x00, 0x00, 0x00,       // mov esi, [rip+0x37] (placeholder .text offset)
-    0x8b, 0x15, 0x35, 0x00, 0x00, 0x00,       // mov edx, [rip+0x35] (placeholder .text size)
-    0x49, 0x89, 0xfb,                         // mov r11, rdi
-    0x8a, 0x0e,                               // mov cl, [rsi]
-    // 40
+
+    // prep args encrypt en allant chercher les params mis dans les placeholder ligne 58-60
+    0x48, 0x8d, 0x3d, 0x35, 0x00, 0x00, 0x00, // LEA rdi, [rip+offset_to_key] - 7 bytes
+    0x48, 0x8d, 0x35, 0x00, 0x00, 0x00, 0x00, // LEA rsi, [rip+offset_to_text] - 7 bytes
+    0x8b, 0x15, 0x35, 0x00, 0x00, 0x00,       // MOV edx, [rip+offset_to_size] - 6 bytes
+    0x49, 0x89, 0xfb,                         // MOV r11, rdi - 3 bytes 
+    0x8a, 0x0e,
     // loop text len 
     0x8a, 0x06,                         // mov    al,BYTE PTR [rsi]
     0x8a, 0x1f,                         // mov    bl,BYTE PTR [rdi]
@@ -92,57 +90,19 @@ void change_pt_note(t_woodyData *data) {
     data->pt_load.p_filesz = data->payload_size; 
     data->pt_load.p_memsz = data->payload_size;
     data->new_entrypoint = (void*)data->injection_addr;
-    printf("new endrtypoint %p\n", data->new_entrypoint);
 }
 
 void write_shellcode(t_woodyData *data, char *output) {
-    unsigned char *shellcode_with_ret = malloc(sizeof(data->payload_size));
-
-    if (shellcode_with_ret == NULL) {
-        perror("Malloc failed for shellcode allocation");
-        free(shellcode_with_ret);
-        exit(1);
-    }
+    unsigned char shellcode_with_ret[data->payload_size];
     
-    // uint64_t offset_placeholder = data->injection_addr + 149; //pos 1er placeholder
-    //
-    // ft_memcpy(shellcode_with_ret, code, data->payload_size);
-    // ft_memcpy(shellcode_with_ret + 151, &offset_placeholder, sizeof(uint64_t)); // change offset 
-    // ft_memcpy(shellcode_with_ret + 164, &data->elf_hdr.e_entry, sizeof(uint64_t)); // change offset
-    // ft_memcpy(&output[data->file_size], shellcode_with_ret, data->payload_size);
     uint64_t offset_placeholder = data->injection_addr + 138; //pos 1er placeholder
-
-    // Copy registers (0-14), then insert new instructions, keeping placeholders at original positions
-    ft_memcpy(shellcode_with_ret, code, 15);  // Copy registers saves (0-14)
-
-    // Build new decrypt setup instructions at position 15
-    // LEA rdi, [rip+offset_to_key] - 7 bytes
-    shellcode_with_ret[15] = 0x48; shellcode_with_ret[16] = 0x8d; shellcode_with_ret[17] = 0x3d;
-    shellcode_with_ret[18] = 0x35; shellcode_with_ret[19] = 0x00; shellcode_with_ret[20] = 0x00; shellcode_with_ret[21] = 0x00;  // offset to key at 75 from RIP at 22
-
-    // LEA rsi, [rip+offset_to_text] - 7 bytes  
     int32_t text_offset = (int32_t)(data->text_sec.sh_addr - (data->injection_addr + 29));
-    shellcode_with_ret[22] = 0x48; shellcode_with_ret[23] = 0x8d; shellcode_with_ret[24] = 0x35;
-    ft_memcpy(shellcode_with_ret + 25, &text_offset, 4);
-
-    // MOV edx, [rip+offset_to_size] - 6 bytes
-    shellcode_with_ret[29] = 0x8b; shellcode_with_ret[30] = 0x15;
-    shellcode_with_ret[31] = 0x35; shellcode_with_ret[32] = 0x00; shellcode_with_ret[33] = 0x00; shellcode_with_ret[34] = 0x00;  // offset to size at 88 from RIP at 35
-
-    // MOV r11, rdi - 3 bytes
-    shellcode_with_ret[35] = 0x49; shellcode_with_ret[36] = 0x89; shellcode_with_ret[37] = 0xfb;
-
-    // MOV cl, [rsi] - 2 bytes
-    shellcode_with_ret[38] = 0x8a; shellcode_with_ret[39] = 0x0e;
-
-    // Copy rest of shellcode (decrypt loop onwards) from original position 40 onwards  
-    ft_memcpy(shellcode_with_ret + 40, code + 40, data->payload_size - 40);
-
-    // Patch PIE relocation placeholders
-    ft_memcpy(shellcode_with_ret + 140, &offset_placeholder, sizeof(uint64_t)); // change offset  
-    ft_memcpy(shellcode_with_ret + 153, &data->elf_hdr.e_entry, sizeof(uint64_t)); // change offset 
-    
+    ft_memcpy(code + 25, &text_offset, 4);
+    ft_memcpy(code + 140, &offset_placeholder, sizeof(uint64_t)); // change offset  
+    ft_memcpy(code + 153, &data->elf_hdr.e_entry, sizeof(uint64_t)); // change offset 
+    ft_memcpy(shellcode_with_ret, code, data->payload_size);
     ft_memcpy(&output[data->file_size], shellcode_with_ret, data->payload_size);
+    // de base text segment est bien sur pas writable, si on change pas ca va segfault quand on va essayer de l encrypt
     for (int i = 0; i < data->elf_hdr.e_phnum; i++) {
         Elf64_Phdr *phdr = (Elf64_Phdr*)&output[data->elf_hdr.e_phoff + i * sizeof(Elf64_Phdr)];
         if (phdr->p_type == PT_LOAD && 
@@ -166,16 +126,16 @@ void write_output_data(t_woodyData *data) {
     char *output = malloc(data->size_out);
     if (output == NULL) {
         perror("output malloc failed\n");
+        free(output);
         exit(1);
     }
     ft_memset(output, 0, data->size_out);
-    dprintf(1, "malloced\n");
     ssize_t bytes_read = read(data->fd, output, data->file_size);
     if (bytes_read != (ssize_t)data->file_size) {
         perror("read issue\n");
+        free(output);
         exit(1);
     }
-    dprintf(1, "red %ld \n", bytes_read);
 
     ft_memcpy(&output[0x18], &data->new_entrypoint, sizeof(void *));
     ft_memcpy(&output[data->offset_ptnote], &data->pt_load, sizeof(Elf64_Phdr));
@@ -187,7 +147,6 @@ void write_output_data(t_woodyData *data) {
 void infect_output_data(t_woodyData *data) {
     data->file_size = lseek(data->fd, 0, SEEK_END); // on recup la taille du fichier
     data->payload_size = sizeof(code);
-    printf("data->payload size = %d\n", data->payload_size);
     change_pt_note(data);
     write_output_data(data);
 }
@@ -209,24 +168,10 @@ void get_ascii_key(t_woodyData *data) {
 void generate_store_decrypt_data(t_woodyData *data) {
     syscall_random(data->key, KEY_SIZE);
     get_ascii_key(data);
-    // printf("readable key is %s\n", data->key);
-    // ft_memcpy(&data->output_bytes[data->file_size + data->payload_size], data->key, KEY_SIZE + 1);
-    // printf("pos where key is written %lx\n", (data->file_size + data->payload_size));
-    // int offset_placeholder = data->file_size + data->payload_size + KEY_SIZE + 1;
-    // ft_memcpy(&data->output_bytes[offset_placeholder], &data->text_sec.sh_offset, 4);
-    // ft_memcpy(&data->output_bytes[offset_placeholder + 4], &data->text_sec.sh_size, 4);
-    printf("readable key is %s\n", data->key);
     ft_memcpy(&data->output_bytes[data->file_size + 75], data->key, KEY_SIZE + 1);
-    // printf("pos where key is written %lx\n", (data->file_size + data->payload_size));
     int offset_placeholder = data->file_size + 75 + KEY_SIZE + 1;
     ft_memcpy(&data->output_bytes[offset_placeholder], &data->text_sec.sh_offset, 4);
     ft_memcpy(&data->output_bytes[offset_placeholder + 4], &data->text_sec.sh_size, 4);
-}
-
-void write_output_file(t_woodyData *data) {
-    printf("fd out %d\n", data->fd_out);
-    write(data->fd_out, data->output_bytes, data->size_out);
-    dprintf(1, "written\n");
 }
 
 int main(int argc, char *argv[])
@@ -240,15 +185,8 @@ int main(int argc, char *argv[])
     data = read_store_headers(argv[1]); 
     infect_output_data(&data);
     generate_store_decrypt_data(&data);
-    printf("fd out %d\n", data.fd_out);
-    printf("size of text section %lu\n", data.text_sec.sh_size);
-    printf("offset  text section %lu\n", data.text_sec.sh_offset);
-    printf("offset  text section %lu\n", data.text_sec.sh_offset);
-    printf("size of output %d\n", data.size_out);
-
     encrypt(data.key, &data.output_bytes[data.text_sec.sh_offset] ,data.text_sec.sh_size);
-    write_output_file(&data);
-
+    write(data.fd_out, data.output_bytes, data.size_out);
     return EXIT_SUCCESS;
     //  objdump -d decrypt.o -M intel -> gets instructions with bytes
 }

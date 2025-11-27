@@ -28,6 +28,9 @@ encrypt:
       lea rdx, [rel $  + 45]
       jmp $ + 10
       mov rdi, r11
+
+
+segment .note.GNU-stack
 ; https://app.x64.halb.it/ cool site for asm
 
     ; // look for placeholder key, offset & size in rdi, rsi, rdx 

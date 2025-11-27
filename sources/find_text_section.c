@@ -13,6 +13,5 @@ char* read_shstrtab(t_woodyData *data) {
   }
   read(data->fd, sh_names, sh_strtab.sh_size);
 
-  // printf("wtf %s\n", &sh_names[1]);
   return sh_names;
 }

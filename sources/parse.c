@@ -56,14 +56,14 @@ int is_valid_elf64_executable(const Elf64_Ehdr *header) {
         return 0;
     }
 
-    printf("Valid 64-bit ELF executable:\n");
-    printf("  Class: 64-bit\n");
-    printf("  Data: %s\n", 
-           header->e_ident[EI_DATA] == ELFDATA2LSB ? "Little Endian" : "Big Endian");
-    printf("  Type: %s\n", 
-           header->e_type == ET_EXEC ? "Executable" : "Shared Object (PIE)");
-    printf("  Entry point: 0x%lx\n", header->e_entry);
-
+    // printf("Valid 64-bit ELF executable:\n");
+    // printf("  Class: 64-bit\n");
+    // printf("  Data: %s\n", 
+    //        header->e_ident[EI_DATA] == ELFDATA2LSB ? "Little Endian" : "Big Endian");
+    // printf("  Type: %s\n", 
+    //        header->e_type == ET_EXEC ? "Executable" : "Shared Object (PIE)");
+    // printf("  Entry point: 0x%lx\n", header->e_entry);
+    //
     return 1;
 }
 

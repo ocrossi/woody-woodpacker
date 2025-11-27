@@ -20,3 +20,5 @@ decrypt:
         jmp loop_text
     exit:
         ret
+
+segment .note.GNU-stack
