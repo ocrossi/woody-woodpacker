@@ -6,7 +6,9 @@ This test framework verifies that the woody_woodpacker executable handles
 various edge cases correctly without crashing.
 """
 
+import argparse
 import os
+import random
 import sys
 import subprocess
 import tempfile
@@ -16,6 +18,15 @@ from pathlib import Path
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, List, Tuple
+
+
+# ELF Header Size Constants
+EXPECTED_ELF64_EHSIZE = 64  # Expected ELF64 header size
+INVALID_ELF_EHSIZE = 0x10   # Invalid header size for testing
+
+# String table offset constants
+SHSTRTAB_TEXT_NAME_OFFSET = 1    # Offset of ".text\0" in shstrtab
+SHSTRTAB_SHSTRTAB_NAME_OFFSET = 7  # Offset of ".shstrtab\0" in shstrtab
 
 
 class TestResult(Enum):
@@ -214,7 +225,7 @@ class WoodyTester:
             section_headers += text_shdr
         
         # .shstrtab section header
-        shstrtab_name_offset = 7 if include_text_section else 1
+        shstrtab_name_offset = SHSTRTAB_SHSTRTAB_NAME_OFFSET if include_text_section else SHSTRTAB_TEXT_NAME_OFFSET
         shstrtab_shdr = struct.pack('<IIQQQQIIQQ',
             shstrtab_name_offset,  # sh_name
             3,  # sh_type = SHT_STRTAB
@@ -622,7 +633,6 @@ class WoodyTester:
     
     def test_random_binary_data(self):
         """Test: Running woody with random binary data."""
-        import random
         random_data = bytes([random.randint(0, 255) for _ in range(1000)])
         filepath = self.create_temp_file("random_data", random_data)
         ret, stdout, stderr = self.run_woody([filepath])
@@ -910,8 +920,8 @@ class WoodyTester:
             b'\x01\x00\x00\x00' +  # Version
             b'\x00' * 24  # Entry, phoff, shoff, flags
         )
-        elf_header += struct.pack('<H', 0x10)  # Wrong ehsize (should be 64)
-        elf_header += b'\x00' * (64 - len(elf_header))
+        elf_header += struct.pack('<H', INVALID_ELF_EHSIZE)  # Wrong ehsize (should be 64)
+        elf_header += b'\x00' * (EXPECTED_ELF64_EHSIZE - len(elf_header))
         filepath = self.create_temp_file("invalid_ehsize", bytes(elf_header))
         ret, stdout, stderr = self.run_woody([filepath])
         
@@ -1037,8 +1047,6 @@ class WoodyTester:
 
 def main():
     """Main entry point."""
-    import argparse
-    
     parser = argparse.ArgumentParser(description="Test framework for woody_woodpacker")
     parser.add_argument(
         "--woody-path",
