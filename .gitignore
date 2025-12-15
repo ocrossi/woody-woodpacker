@@ -1,2 +1,7 @@
 objects
 **/.o
+woody_woodpacker
+woody
+__pycache__/
+*.pyc
+.pytest_cache/
